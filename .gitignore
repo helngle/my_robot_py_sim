@@ -1,0 +1,13 @@
+.claude/
+__pycache__/
+*.py[cod]
+
+build/
+install/
+log/
+
+.colcon/
+.pytest_cache/
+
+*.gv
+*.pdf

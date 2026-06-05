@@ -1,0 +1,21 @@
+# Base footprint for future Navigation2 costmaps.
+#
+# This is intentionally only the mobile base footprint, not the full
+# manipulator safety shell. The full-body shell is published separately on
+# /safety_shell_array for future 3D clearance checks.
+#
+# Coordinates are in base_footprint:
+#   +x forward, +y left.
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      footprint: "[[0.42, 0.42], [0.42, -0.42], [-0.42, -0.42], [-0.42, 0.42]]"
+      footprint_padding: 0.03
+      robot_radius: 0.0
+
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      footprint: "[[0.42, 0.42], [0.42, -0.42], [-0.42, -0.42], [-0.42, 0.42]]"
+      footprint_padding: 0.03
+      robot_radius: 0.0

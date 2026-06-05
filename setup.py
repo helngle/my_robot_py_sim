@@ -1,3 +1,6 @@
+import os
+from glob import glob
+
 from setuptools import find_packages, setup
 
 package_name = 'my_robot_py_sim'
@@ -10,6 +13,7 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
+        (os.path.join('share', package_name, 'config'), glob('config/*.yaml')),
         ('share/' + package_name + '/urdf',
             ['urdf/mobile_manipulator.urdf']),
         ('share/' + package_name + '/worlds',
@@ -20,6 +24,7 @@ setup(
             'launch/view_robot.launch.py',
             'launch/gazebo_world.launch.py',
             'launch/sim_with_rviz.launch.py',
+            'launch/localization_with_rviz.launch.py',
         ]),
     ],
     install_requires=['setuptools'],
@@ -35,7 +40,9 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'gazebo_pose_odom = my_robot_py_sim.gazebo_pose_odom:main',
             'odom_to_tf = my_robot_py_sim.odom_to_tf:main',
+            'footprint_marker = my_robot_py_sim.footprint_marker:main',
             'safety_shell_marker = my_robot_py_sim.safety_shell_marker:main',
         ],
     },

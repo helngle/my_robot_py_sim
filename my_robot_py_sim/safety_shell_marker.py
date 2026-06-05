@@ -65,10 +65,8 @@ class SafetyShellMarker(Node):
 
     def publish_markers(self):
         wheel_pose = (0, 0, 0, 0.70710678, 0, 0, 0.70710678)
-        arm_pose_positive_y = (0, 0.21, 0, 0.70710678, 0, 0, 0.70710678)
-        forearm_pose_positive_y = (0, 0.18, 0, 0.70710678, 0, 0, 0.70710678)
-        arm_pose_negative_y = (0, -0.21, 0, 0.70710678, 0, 0, 0.70710678)
-        forearm_pose_negative_y = (0, -0.18, 0, 0.70710678, 0, 0, 0.70710678)
+        upper_arm_pose = (0, 0, -0.17, 0, 0, 0, 1)
+        forearm_pose = (0, 0, -0.15, 0, 0, 0, 1)
 
         markers = MarkerArray()
         markers.markers.extend([
@@ -79,12 +77,14 @@ class SafetyShellMarker(Node):
             self.cylinder_marker(4, 'rear_right_wheel_link', 0.105, 0.11, wheel_pose),
             self.box_marker(5, 'torso_link', (0.44, 0.36, 0.68)),
             self.box_marker(6, 'head_sensor_link', (0.26, 0.24, 0.18)),
-            self.cylinder_marker(7, 'left_upper_arm_link', 0.045, 0.42, arm_pose_positive_y),
-            self.cylinder_marker(8, 'left_forearm_link', 0.04, 0.36, forearm_pose_positive_y),
-            self.box_marker(9, 'left_hand_link', (0.10, 0.07, 0.12)),
-            self.cylinder_marker(10, 'right_upper_arm_link', 0.045, 0.42, arm_pose_negative_y),
-            self.cylinder_marker(11, 'right_forearm_link', 0.04, 0.36, forearm_pose_negative_y),
-            self.box_marker(12, 'right_hand_link', (0.10, 0.07, 0.12)),
+            self.box_marker(7, 'sensor_mount_link', (0.16, 0.12, 0.08)),
+            self.cylinder_marker(8, 'lidar_link', 0.07, 0.08, (0, 0, 0, 0, 0, 0, 1)),
+            self.cylinder_marker(9, 'left_upper_arm_link', 0.045, 0.34, upper_arm_pose),
+            self.cylinder_marker(10, 'left_forearm_link', 0.04, 0.30, forearm_pose),
+            self.box_marker(11, 'left_hand_link', (0.10, 0.07, 0.12)),
+            self.cylinder_marker(12, 'right_upper_arm_link', 0.045, 0.34, upper_arm_pose),
+            self.cylinder_marker(13, 'right_forearm_link', 0.04, 0.30, forearm_pose),
+            self.box_marker(14, 'right_hand_link', (0.10, 0.07, 0.12)),
         ])
         self.publisher.publish(markers)
 

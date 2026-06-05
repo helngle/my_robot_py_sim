@@ -1,8 +1,10 @@
 import os
+
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription, SetEnvironmentVariable, TimerAction
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, SetEnvironmentVariable, TimerAction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 NAMESPACE = 'mobile_manipulator'
@@ -12,14 +14,17 @@ def generate_launch_description():
     pkg_my_robot = get_package_share_directory('my_robot_py_sim')
     pkg_ros_ign_gazebo = get_package_share_directory('ros_ign_gazebo')
 
+    default_map = os.path.expanduser('~/ros2_ws/my_first_map.yaml')
+    map_file = LaunchConfiguration('map')
+
     urdf_file = os.path.join(pkg_my_robot, 'urdf', 'mobile_manipulator.urdf')
     with open(urdf_file, 'r') as f:
         robot_desc = f.read()
 
     world_file = os.path.join(pkg_my_robot, 'worlds', 'door_world.sdf')
-    slam_config = os.path.join(pkg_my_robot, 'config', 'slam_toolbox.yaml')
+    amcl_config = os.path.join(pkg_my_robot, 'config', 'amcl.yaml')
+    rviz_config = os.path.join(pkg_my_robot, 'rviz', 'view_robot.rviz')
 
-    # Start Ignition Gazebo
     gazebo = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(pkg_ros_ign_gazebo, 'launch', 'ign_gazebo.launch.py')
@@ -27,39 +32,32 @@ def generate_launch_description():
         launch_arguments={'ign_args': f'-r {world_file}'}.items(),
     )
 
-    # Robot state publisher
     robot_state_pub = Node(
         package='robot_state_publisher',
         executable='robot_state_publisher',
         name='robot_state_publisher',
         namespace=NAMESPACE,
         output='screen',
-        parameters=[{'robot_description': robot_desc,
-                     'use_sim_time': True}],
+        parameters=[{
+            'robot_description': robot_desc,
+            'use_sim_time': True,
+        }],
     )
 
-    # Spawn robot into Gazebo
     spawn_robot = Node(
         package='ros_ign_gazebo',
         executable='create',
         name='spawn_robot',
-        arguments=['-topic', f'/{NAMESPACE}/robot_description',
-                   '-name', 'mobile_manipulator',
-                   '-x', '-2.0', '-y', '0', '-z', '0.0'],
+        arguments=[
+            '-topic', f'/{NAMESPACE}/robot_description',
+            '-name', 'mobile_manipulator',
+            '-x', '-2.0',
+            '-y', '0',
+            '-z', '0.0',
+        ],
         output='screen',
     )
 
-    # RViz2
-    rviz_config = os.path.join(pkg_my_robot, 'rviz', 'view_robot.rviz')
-    rviz = Node(
-        package='rviz2',
-        executable='rviz2',
-        name='rviz2',
-        arguments=['-d', rviz_config],
-        parameters=[{'use_sim_time': True}],
-    )
-
-    # Bridge for /clock from Gazebo
     clock_bridge = Node(
         package='ros_gz_bridge',
         executable='parameter_bridge',
@@ -150,14 +148,6 @@ def generate_launch_description():
         output='screen',
     )
 
-    slam_toolbox = Node(
-        package='slam_toolbox',
-        executable='async_slam_toolbox_node',
-        name='slam_toolbox',
-        parameters=[slam_config],
-        output='screen',
-    )
-
     gazebo_pose_odom = Node(
         package='my_robot_py_sim',
         executable='gazebo_pose_odom',
@@ -172,6 +162,37 @@ def generate_launch_description():
             'publish_tf': True,
         }],
         output='screen',
+    )
+
+    map_server = Node(
+        package='nav2_map_server',
+        executable='map_server',
+        name='map_server',
+        output='screen',
+        parameters=[{
+            'use_sim_time': True,
+            'yaml_filename': map_file,
+        }],
+    )
+
+    amcl = Node(
+        package='nav2_amcl',
+        executable='amcl',
+        name='amcl',
+        output='screen',
+        parameters=[amcl_config],
+    )
+
+    lifecycle_manager = Node(
+        package='nav2_lifecycle_manager',
+        executable='lifecycle_manager',
+        name='lifecycle_manager_localization',
+        output='screen',
+        parameters=[{
+            'use_sim_time': True,
+            'autostart': True,
+            'node_names': ['map_server', 'amcl'],
+        }],
     )
 
     safety_shell = Node(
@@ -202,7 +223,16 @@ def generate_launch_description():
         output='screen',
     )
 
+    rviz = Node(
+        package='rviz2',
+        executable='rviz2',
+        name='rviz2',
+        arguments=['-d', rviz_config],
+        parameters=[{'use_sim_time': True}],
+    )
+
     return LaunchDescription([
+        DeclareLaunchArgument('map', default_value=default_map),
         SetEnvironmentVariable('ROS_DOMAIN_ID', '23'),
         SetEnvironmentVariable('ROS_LOCALHOST_ONLY', '1'),
         gazebo,
@@ -213,11 +243,15 @@ def generate_launch_description():
         lidar_points_bridge,
         lidar_frame_tf,
         pointcloud_to_scan,
-        slam_toolbox,
         gazebo_pose_odom,
         robot_state_pub,
         safety_shell,
         footprint_marker,
         TimerAction(period=3.0, actions=[spawn_robot]),
-        TimerAction(period=5.0, actions=[rviz]),
+        TimerAction(period=7.0, actions=[
+            map_server,
+            amcl,
+            lifecycle_manager,
+        ]),
+        TimerAction(period=9.0, actions=[rviz]),
     ])

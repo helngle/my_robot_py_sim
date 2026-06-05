@@ -20,6 +20,12 @@
   <material name="sensor_black">
     <color rgba="0.05 0.05 0.06 1"/>
   </material>
+  <material name="sensor_mount_gray">
+    <color rgba="0.18 0.20 0.22 1"/>
+  </material>
+  <material name="lidar_blue">
+    <color rgba="0.10 0.45 0.75 1"/>
+  </material>
 
   <!-- ===== BASE LINKS ===== -->
   <link name="base_footprint"/>
@@ -168,6 +174,42 @@
     </collision>
   </link>
 
+  <link name="sensor_mount_link">
+    <inertial>
+      <mass value="0.35"/>
+      <inertia ixx="0.002" ixy="0" ixz="0" iyy="0.002" iyz="0" izz="0.002"/>
+    </inertial>
+    <visual>
+      <geometry>
+        <box size="0.16 0.12 0.08"/>
+      </geometry>
+      <material name="sensor_mount_gray"/>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="0.16 0.12 0.08"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <link name="lidar_link">
+    <inertial>
+      <mass value="0.25"/>
+      <inertia ixx="0.0015" ixy="0" ixz="0" iyy="0.0015" iyz="0" izz="0.0015"/>
+    </inertial>
+    <visual>
+      <geometry>
+        <cylinder radius="0.07" length="0.08"/>
+      </geometry>
+      <material name="lidar_blue"/>
+    </visual>
+    <collision>
+      <geometry>
+        <cylinder radius="0.07" length="0.08"/>
+      </geometry>
+    </collision>
+  </link>
+
   <!-- ===== LEFT ARM LINKS ===== -->
   <link name="left_upper_arm_link">
     <inertial>
@@ -175,16 +217,16 @@
       <inertia ixx="0.035" ixy="0" ixz="0" iyy="0.006" iyz="0" izz="0.035"/>
     </inertial>
     <visual>
-      <origin xyz="0 0.21 0" rpy="1.57079632679 0 0"/>
+      <origin xyz="0 0 -0.17"/>
       <geometry>
-        <cylinder radius="0.045" length="0.42"/>
+        <cylinder radius="0.045" length="0.34"/>
       </geometry>
       <material name="arm_red"/>
     </visual>
     <collision>
-      <origin xyz="0 0.21 0" rpy="1.57079632679 0 0"/>
+      <origin xyz="0 0 -0.17"/>
       <geometry>
-        <cylinder radius="0.045" length="0.42"/>
+        <cylinder radius="0.045" length="0.34"/>
       </geometry>
     </collision>
   </link>
@@ -195,16 +237,16 @@
       <inertia ixx="0.025" ixy="0" ixz="0" iyy="0.004" iyz="0" izz="0.025"/>
     </inertial>
     <visual>
-      <origin xyz="0 0.18 0" rpy="1.57079632679 0 0"/>
+      <origin xyz="0 0 -0.15"/>
       <geometry>
-        <cylinder radius="0.04" length="0.36"/>
+        <cylinder radius="0.04" length="0.30"/>
       </geometry>
       <material name="forearm_orange"/>
     </visual>
     <collision>
-      <origin xyz="0 0.18 0" rpy="1.57079632679 0 0"/>
+      <origin xyz="0 0 -0.15"/>
       <geometry>
-        <cylinder radius="0.04" length="0.36"/>
+        <cylinder radius="0.04" length="0.30"/>
       </geometry>
     </collision>
   </link>
@@ -234,16 +276,16 @@
       <inertia ixx="0.035" ixy="0" ixz="0" iyy="0.006" iyz="0" izz="0.035"/>
     </inertial>
     <visual>
-      <origin xyz="0 -0.21 0" rpy="1.57079632679 0 0"/>
+      <origin xyz="0 0 -0.17"/>
       <geometry>
-        <cylinder radius="0.045" length="0.42"/>
+        <cylinder radius="0.045" length="0.34"/>
       </geometry>
       <material name="arm_red"/>
     </visual>
     <collision>
-      <origin xyz="0 -0.21 0" rpy="1.57079632679 0 0"/>
+      <origin xyz="0 0 -0.17"/>
       <geometry>
-        <cylinder radius="0.045" length="0.42"/>
+        <cylinder radius="0.045" length="0.34"/>
       </geometry>
     </collision>
   </link>
@@ -254,16 +296,16 @@
       <inertia ixx="0.025" ixy="0" ixz="0" iyy="0.004" iyz="0" izz="0.025"/>
     </inertial>
     <visual>
-      <origin xyz="0 -0.18 0" rpy="1.57079632679 0 0"/>
+      <origin xyz="0 0 -0.15"/>
       <geometry>
-        <cylinder radius="0.04" length="0.36"/>
+        <cylinder radius="0.04" length="0.30"/>
       </geometry>
       <material name="forearm_orange"/>
     </visual>
     <collision>
-      <origin xyz="0 -0.18 0" rpy="1.57079632679 0 0"/>
+      <origin xyz="0 0 -0.15"/>
       <geometry>
-        <cylinder radius="0.04" length="0.36"/>
+        <cylinder radius="0.04" length="0.30"/>
       </geometry>
     </collision>
   </link>
@@ -328,6 +370,18 @@
     <origin xyz="0.04 0 0.43"/>
   </joint>
 
+  <joint name="sensor_mount_fixed_joint" type="fixed">
+    <parent link="head_sensor_link"/>
+    <child link="sensor_mount_link"/>
+    <origin xyz="0.16 0 0.10"/>
+  </joint>
+
+  <joint name="lidar_fixed_joint" type="fixed">
+    <parent link="sensor_mount_link"/>
+    <child link="lidar_link"/>
+    <origin xyz="0.02 0 0.08"/>
+  </joint>
+
   <!-- ===== LEFT ARM JOINTS ===== -->
   <joint name="left_shoulder_yaw_joint" type="fixed">
     <parent link="torso_link"/>
@@ -340,7 +394,7 @@
   <joint name="left_elbow_joint" type="fixed">
     <parent link="left_upper_arm_link"/>
     <child link="left_forearm_link"/>
-    <origin xyz="0 0.42 0"/>
+    <origin xyz="0 0 -0.34"/>
     <axis xyz="1 0 0"/>
     <limit lower="-2.356" upper="0.175" effort="60" velocity="1.5"/>
   </joint>
@@ -348,7 +402,7 @@
   <joint name="left_hand_fixed_joint" type="fixed">
     <parent link="left_forearm_link"/>
     <child link="left_hand_link"/>
-    <origin xyz="0 0.39 0"/>
+    <origin xyz="0 0 -0.32"/>
   </joint>
 
   <!-- ===== RIGHT ARM JOINTS ===== -->
@@ -363,7 +417,7 @@
   <joint name="right_elbow_joint" type="fixed">
     <parent link="right_upper_arm_link"/>
     <child link="right_forearm_link"/>
-    <origin xyz="0 -0.42 0"/>
+    <origin xyz="0 0 -0.34"/>
     <axis xyz="1 0 0"/>
     <limit lower="-0.175" upper="2.356" effort="60" velocity="1.5"/>
   </joint>
@@ -371,7 +425,7 @@
   <joint name="right_hand_fixed_joint" type="fixed">
     <parent link="right_forearm_link"/>
     <child link="right_hand_link"/>
-    <origin xyz="0 -0.39 0"/>
+    <origin xyz="0 0 -0.32"/>
   </joint>
 
   <!-- ===== GAZEBO APPEARANCE AND CONTROL ===== -->
@@ -383,6 +437,39 @@
   </gazebo>
   <gazebo reference="head_sensor_link">
     <material>Gazebo/Black</material>
+  </gazebo>
+  <gazebo reference="sensor_mount_link">
+    <material>Gazebo/DarkGrey</material>
+  </gazebo>
+  <gazebo reference="lidar_link">
+    <material>Gazebo/Blue</material>
+    <sensor name="head_gpu_lidar" type="gpu_lidar">
+      <topic>/lidar/points</topic>
+      <update_rate>8</update_rate>
+      <lidar>
+        <scan>
+          <horizontal>
+            <samples>360</samples>
+            <resolution>1</resolution>
+            <min_angle>-3.14159</min_angle>
+            <max_angle>3.14159</max_angle>
+          </horizontal>
+          <vertical>
+            <samples>16</samples>
+            <resolution>1</resolution>
+            <min_angle>-0.35</min_angle>
+            <max_angle>0.35</max_angle>
+          </vertical>
+        </scan>
+        <range>
+          <min>0.12</min>
+          <max>8.0</max>
+          <resolution>0.02</resolution>
+        </range>
+      </lidar>
+      <alwaysOn>1</alwaysOn>
+      <visualize>true</visualize>
+    </sensor>
   </gazebo>
   <gazebo reference="front_left_wheel_link">
     <material>Gazebo/Black</material>

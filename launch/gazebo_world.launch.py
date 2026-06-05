@@ -62,12 +62,12 @@ def generate_launch_description():
         output='screen',
     )
 
-    odom_bridge = Node(
+    gazebo_pose_bridge = Node(
         package='ros_gz_bridge',
         executable='parameter_bridge',
-        name='odom_bridge',
-        arguments=['/model/mobile_manipulator/odometry@nav_msgs/msg/Odometry[ignition.msgs.Odometry'],
-        remappings=[('/model/mobile_manipulator/odometry', '/odom')],
+        name='gazebo_pose_bridge',
+        arguments=['/world/door_passage_test/pose/info@tf2_msgs/msg/TFMessage[ignition.msgs.Pose_V'],
+        remappings=[('/world/door_passage_test/pose/info', '/gazebo_pose_info')],
         output='screen',
     )
 
@@ -88,15 +88,65 @@ def generate_launch_description():
         output='screen',
     )
 
-    odom_to_tf = Node(
-        package='my_robot_py_sim',
-        executable='odom_to_tf',
-        name='odom_to_tf',
+    lidar_points_bridge = Node(
+        package='ros_gz_bridge',
+        executable='parameter_bridge',
+        name='lidar_points_bridge',
+        arguments=['/lidar/points/points@sensor_msgs/msg/PointCloud2[ignition.msgs.PointCloudPacked'],
+        remappings=[('/lidar/points/points', '/lidar/points')],
+        output='screen',
+    )
+
+    lidar_frame_tf = Node(
+        package='tf2_ros',
+        executable='static_transform_publisher',
+        name='lidar_frame_tf',
+        arguments=[
+            '0', '0', '0',
+            '0', '0', '0',
+            'lidar_link',
+            'mobile_manipulator/base_footprint/head_gpu_lidar',
+        ],
+        output='screen',
+    )
+
+    pointcloud_to_scan = Node(
+        package='pointcloud_to_laserscan',
+        executable='pointcloud_to_laserscan_node',
+        name='pointcloud_to_laserscan',
         parameters=[{
             'use_sim_time': True,
+            'target_frame': 'base_footprint',
+            'transform_tolerance': 0.05,
+            'min_height': 0.20,
+            'max_height': 0.85,
+            'angle_min': -3.14159,
+            'angle_max': 3.14159,
+            'angle_increment': 0.0174533,
+            'scan_time': 0.125,
+            'range_min': 0.45,
+            'range_max': 8.0,
+            'use_inf': True,
+        }],
+        remappings=[
+            ('cloud_in', '/lidar/points'),
+            ('scan', '/scan'),
+        ],
+        output='screen',
+    )
+
+    gazebo_pose_odom = Node(
+        package='my_robot_py_sim',
+        executable='gazebo_pose_odom',
+        name='gazebo_pose_odom',
+        parameters=[{
+            'use_sim_time': True,
+            'pose_topic': '/gazebo_pose_info',
+            'model_name': 'mobile_manipulator',
             'odom_topic': '/odom',
             'odom_frame': 'odom',
             'base_frame': 'base_footprint',
+            'publish_tf': True,
         }],
         output='screen',
     )
@@ -114,16 +164,35 @@ def generate_launch_description():
         output='screen',
     )
 
+    footprint_marker = Node(
+        package='my_robot_py_sim',
+        executable='footprint_marker',
+        name='footprint_marker',
+        parameters=[{
+            'use_sim_time': True,
+            'topic': '/base_footprint_marker',
+            'frame_id': 'base_footprint',
+            'length': 0.84,
+            'width': 0.84,
+            'z_offset': 0.025,
+        }],
+        output='screen',
+    )
+
     return LaunchDescription([
         SetEnvironmentVariable('ROS_DOMAIN_ID', '23'),
         SetEnvironmentVariable('ROS_LOCALHOST_ONLY', '1'),
         gazebo,
         clock_bridge,
         cmd_vel_bridge,
-        odom_bridge,
+        gazebo_pose_bridge,
         joint_state_bridge,
-        odom_to_tf,
+        lidar_points_bridge,
+        lidar_frame_tf,
+        pointcloud_to_scan,
+        gazebo_pose_odom,
         robot_state_pub,
         safety_shell,
+        footprint_marker,
         TimerAction(period=3.0, actions=[spawn_robot]),
     ])

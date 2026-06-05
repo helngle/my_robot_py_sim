@@ -75,12 +75,12 @@ def generate_launch_description():
         output='screen',
     )
 
-    gazebo_pose_bridge = Node(
+    odom_bridge = Node(
         package='ros_gz_bridge',
         executable='parameter_bridge',
-        name='gazebo_pose_bridge',
-        arguments=['/world/door_passage_test/pose/info@tf2_msgs/msg/TFMessage[ignition.msgs.Pose_V'],
-        remappings=[('/world/door_passage_test/pose/info', '/gazebo_pose_info')],
+        name='odom_bridge',
+        arguments=['/model/mobile_manipulator/odometry@nav_msgs/msg/Odometry[ignition.msgs.Odometry'],
+        remappings=[('/model/mobile_manipulator/odometry', '/odom')],
         output='screen',
     )
 
@@ -148,18 +148,15 @@ def generate_launch_description():
         output='screen',
     )
 
-    gazebo_pose_odom = Node(
+    odom_to_tf = Node(
         package='my_robot_py_sim',
-        executable='gazebo_pose_odom',
-        name='gazebo_pose_odom',
+        executable='odom_to_tf',
+        name='odom_to_tf',
         parameters=[{
             'use_sim_time': True,
-            'pose_topic': '/gazebo_pose_info',
-            'model_name': 'mobile_manipulator',
             'odom_topic': '/odom',
             'odom_frame': 'odom',
             'base_frame': 'base_footprint',
-            'publish_tf': True,
         }],
         output='screen',
     )
@@ -238,12 +235,12 @@ def generate_launch_description():
         gazebo,
         clock_bridge,
         cmd_vel_bridge,
-        gazebo_pose_bridge,
+        odom_bridge,
         joint_state_bridge,
         lidar_points_bridge,
         lidar_frame_tf,
         pointcloud_to_scan,
-        gazebo_pose_odom,
+        odom_to_tf,
         robot_state_pub,
         safety_shell,
         footprint_marker,

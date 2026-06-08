@@ -5,9 +5,21 @@ import time
 import rclpy
 from action_msgs.msg import GoalStatus
 from nav2_msgs.action import NavigateThroughPoses, NavigateToPose
+from nav_msgs.msg import OccupancyGrid, Odometry
+from rcl_interfaces.msg import Parameter, ParameterType
+from rcl_interfaces.srv import SetParameters
 from rclpy.action import ActionClient
+from rclpy.duration import Duration
 from rclpy.node import Node
+from rclpy.qos import (
+    DurabilityPolicy,
+    HistoryPolicy,
+    QoSProfile,
+    ReliabilityPolicy,
+    qos_profile_sensor_data,
+)
 from rclpy.utilities import remove_ros_args
+from sensor_msgs.msg import LaserScan
 from tf2_ros import Buffer, TransformException, TransformListener
 
 from my_robot_py_sim.route_utils import (
@@ -16,6 +28,7 @@ from my_robot_py_sim.route_utils import (
     nearest_waypoint_name,
     route_segment_waypoints,
     route_to_poses,
+    save_routes,
     waypoint_to_pose,
 )
 
@@ -45,6 +58,87 @@ class RouteCli(Node):
             ]
             self.get_logger().info(f'{route_name}: {", ".join(names)}')
         return True
+
+    def route_info(self, route_name):
+        route = self.get_route(route_name)
+        waypoints = route.get('waypoints', [])
+        frame_id = route.get('frame_id', 'map')
+        distance = self.route_distance(waypoints)
+
+        self.get_logger().info(f'Route: {route_name}')
+        self.get_logger().info(f'Frame: {frame_id}')
+        self.get_logger().info(f'Waypoints: {len(waypoints)}')
+        self.get_logger().info(f'Length: {distance:.2f} m')
+
+        if not waypoints:
+            return True
+
+        start = waypoints[0]
+        goal = waypoints[-1]
+        self.get_logger().info(
+            'Start: '
+            f'{start.get("name", 0)} '
+            f'x={float(start["x"]):.2f}, y={float(start["y"]):.2f}'
+        )
+        self.get_logger().info(
+            'Goal: '
+            f'{goal.get("name", len(waypoints) - 1)} '
+            f'x={float(goal["x"]):.2f}, y={float(goal["y"]):.2f}'
+        )
+        self.get_logger().info(
+            'Waypoint sequence: ' + ' -> '.join(
+                waypoint.get('name', str(index))
+                for index, waypoint in enumerate(waypoints)
+            )
+        )
+        return True
+
+    def rename_route(self, old_name, new_name, overwrite=False):
+        if old_name == new_name:
+            raise ValueError('Old and new route names are the same.')
+
+        data = load_routes(self.route_file)
+        routes = data.get('routes', {})
+        if old_name not in routes:
+            raise ValueError(f'Route "{old_name}" was not found.')
+        if new_name in routes and not overwrite:
+            raise ValueError(
+                f'Route "{new_name}" already exists. Use --overwrite '
+                'if you want to replace it.'
+            )
+
+        routes[new_name] = routes.pop(old_name)
+        save_routes(self.route_file, data)
+        self.get_logger().info(
+            f'Renamed route "{old_name}" to "{new_name}" in '
+            f'{self.route_file}'
+        )
+        return True
+
+    def delete_route(self, route_name, yes=False):
+        if not yes:
+            raise ValueError(
+                f'Delete route "{route_name}" requires --yes. '
+                'This prevents accidental route loss.'
+            )
+
+        data = load_routes(self.route_file)
+        routes = data.get('routes', {})
+        if route_name not in routes:
+            raise ValueError(f'Route "{route_name}" was not found.')
+
+        del routes[route_name]
+        save_routes(self.route_file, data)
+        self.get_logger().info(
+            f'Deleted route "{route_name}" from {self.route_file}')
+        return True
+
+    def display_route(self, route_name):
+        self.get_route(route_name)
+        return self.set_route_manager_active_route(route_name)
+
+    def display_all_routes(self):
+        return self.set_route_manager_active_route('')
 
     def go_to(self, route_name, waypoint_name):
         route = self.get_route(route_name)
@@ -98,6 +192,30 @@ class RouteCli(Node):
         self.get_logger().info('Waypoint sequence: ' + ' -> '.join(names))
         return True
 
+    def check_nav(self):
+        ok = True
+        self.warm_tf_buffer()
+        checks = [
+            self.check_topic('/map', OccupancyGrid, self.map_qos()),
+            self.check_topic('/odom', Odometry),
+            self.check_topic('/scan', LaserScan, qos_profile_sensor_data),
+            self.check_transform('odom', 'base_footprint'),
+            self.check_transform('map', 'base_footprint'),
+            self.check_action(self.go_to_client, 'navigate_to_pose'),
+            self.check_action(self.follow_client, 'navigate_through_poses'),
+        ]
+        for check_ok in checks:
+            ok = ok and check_ok
+
+        if ok:
+            self.get_logger().info('Navigation route checks passed.')
+        else:
+            self.get_logger().error(
+                'Navigation route checks failed. Start navigation first, set '
+                'the RViz initial pose, then check /map, /odom, /scan, and TF.'
+            )
+        return ok
+
     def find_nearest_name(self, route):
         fixed_frame = route.get('frame_id', 'map')
         transform = self.lookup_robot_pose(fixed_frame)
@@ -105,7 +223,8 @@ class RouteCli(Node):
         return nearest_waypoint_name(route, translation.x, translation.y)
 
     def lookup_robot_pose(self, fixed_frame):
-        deadline = time.monotonic() + 5.0
+        self.warm_tf_buffer()
+        deadline = time.monotonic() + 10.0
         last_error = None
         while time.monotonic() < deadline:
             try:
@@ -120,6 +239,70 @@ class RouteCli(Node):
 
         raise ValueError(
             f'Could not find robot pose in {fixed_frame}: {last_error}')
+
+    def warm_tf_buffer(self):
+        deadline = time.monotonic() + 2.0
+        while time.monotonic() < deadline:
+            rclpy.spin_once(self, timeout_sec=0.1)
+
+    def check_topic(self, topic_name, msg_type, qos_profile=10):
+        result = {'received': False}
+
+        def callback(_msg):
+            result['received'] = True
+
+        subscription = self.create_subscription(
+            msg_type, topic_name, callback, qos_profile)
+        deadline = time.monotonic() + 3.0
+        while time.monotonic() < deadline and not result['received']:
+            rclpy.spin_once(self, timeout_sec=0.1)
+
+        self.destroy_subscription(subscription)
+        if result['received']:
+            self.get_logger().info(f'{topic_name}: OK')
+            return True
+
+        self.get_logger().error(f'{topic_name}: no message received')
+        return False
+
+    @staticmethod
+    def map_qos():
+        return QoSProfile(
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1,
+            reliability=ReliabilityPolicy.RELIABLE,
+            durability=DurabilityPolicy.TRANSIENT_LOCAL,
+        )
+
+    def check_transform(self, target_frame, source_frame):
+        deadline = time.monotonic() + 10.0
+        last_error = None
+        while time.monotonic() < deadline:
+            try:
+                self.tf_buffer.lookup_transform(
+                    target_frame,
+                    source_frame,
+                    rclpy.time.Time(),
+                    timeout=Duration(seconds=0.5),
+                )
+                self.get_logger().info(
+                    f'TF {target_frame} -> {source_frame}: OK')
+                return True
+            except TransformException as ex:
+                last_error = ex
+                rclpy.spin_once(self, timeout_sec=0.1)
+
+        self.get_logger().error(
+            f'TF {target_frame} -> {source_frame}: {last_error}')
+        return False
+
+    def check_action(self, client, action_name):
+        if client.wait_for_server(timeout_sec=3.0):
+            self.get_logger().info(f'{action_name}: OK')
+            return True
+
+        self.get_logger().error(f'{action_name}: action server unavailable')
+        return False
 
     def get_route(self, route_name):
         data = load_routes(self.route_file)
@@ -169,6 +352,51 @@ class RouteCli(Node):
         self.get_logger().info('Navigation finished.')
         return True
 
+    def set_route_manager_active_route(self, route_name):
+        client = self.create_client(SetParameters, '/route_manager/set_parameters')
+        if not client.wait_for_service(timeout_sec=5.0):
+            self.get_logger().error(
+                '/route_manager/set_parameters is not available. '
+                'Start navigation_with_rviz.launch.py first.'
+            )
+            return False
+
+        parameter = Parameter()
+        parameter.name = 'active_route'
+        parameter.value.type = ParameterType.PARAMETER_STRING
+        parameter.value.string_value = route_name
+
+        request = SetParameters.Request()
+        request.parameters = [parameter]
+        future = client.call_async(request)
+        rclpy.spin_until_future_complete(self, future)
+        response = future.result()
+        if response is None or not response.results:
+            self.get_logger().error('No response from route_manager.')
+            return False
+
+        result = response.results[0]
+        if not result.successful:
+            self.get_logger().error(
+                f'route_manager rejected active_route: {result.reason}')
+            return False
+
+        if route_name:
+            self.get_logger().info(f'RViz route display: {route_name}')
+        else:
+            self.get_logger().info('RViz route display: all routes')
+        return True
+
+    @staticmethod
+    def route_distance(waypoints):
+        distance = 0.0
+        for first, second in zip(waypoints, waypoints[1:]):
+            distance += (
+                (float(first['x']) - float(second['x'])) ** 2 +
+                (float(first['y']) - float(second['y'])) ** 2
+            ) ** 0.5
+        return distance
+
 
 def parse_args(argv):
     parser = argparse.ArgumentParser()
@@ -180,6 +408,23 @@ def parse_args(argv):
     subparsers = parser.add_subparsers(dest='command', required=True)
 
     subparsers.add_parser('list')
+
+    info = subparsers.add_parser('info')
+    info.add_argument('route')
+
+    rename = subparsers.add_parser('rename')
+    rename.add_argument('old_name')
+    rename.add_argument('new_name')
+    rename.add_argument('--overwrite', action='store_true')
+
+    delete = subparsers.add_parser('delete')
+    delete.add_argument('route')
+    delete.add_argument('--yes', action='store_true')
+
+    display = subparsers.add_parser('display')
+    display.add_argument('route')
+
+    subparsers.add_parser('display_all')
 
     go_to = subparsers.add_parser('go_to')
     go_to.add_argument('route')
@@ -201,6 +446,8 @@ def parse_args(argv):
     preview_nearest.add_argument('route')
     preview_nearest.add_argument('--goal')
 
+    subparsers.add_parser('check_nav')
+
     return parser.parse_args(argv)
 
 
@@ -214,6 +461,17 @@ def main(args=None):
     try:
         if parsed.command == 'list':
             ok = node.list_routes()
+        elif parsed.command == 'info':
+            ok = node.route_info(parsed.route)
+        elif parsed.command == 'rename':
+            ok = node.rename_route(
+                parsed.old_name, parsed.new_name, parsed.overwrite)
+        elif parsed.command == 'delete':
+            ok = node.delete_route(parsed.route, parsed.yes)
+        elif parsed.command == 'display':
+            ok = node.display_route(parsed.route)
+        elif parsed.command == 'display_all':
+            ok = node.display_all_routes()
         elif parsed.command == 'go_to':
             ok = node.go_to(parsed.route, parsed.waypoint)
         elif parsed.command == 'follow':
@@ -224,6 +482,8 @@ def main(args=None):
             ok = node.follow_nearest(parsed.route, parsed.goal)
         elif parsed.command == 'preview_nearest':
             ok = node.preview_nearest(parsed.route, parsed.goal)
+        elif parsed.command == 'check_nav':
+            ok = node.check_nav()
     except ValueError as ex:
         node.get_logger().error(str(ex))
     finally:

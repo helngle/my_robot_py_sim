@@ -13,6 +13,7 @@ class RouteManager(Node):
         self.declare_parameter('route_file', default_routes_file())
         self.declare_parameter('marker_topic', '/route_markers')
         self.declare_parameter('publish_rate', 1.0)
+        self.declare_parameter('active_route', '')
 
         self.route_file = self.get_parameter('route_file').value
         marker_topic = self.get_parameter('marker_topic').value
@@ -24,6 +25,7 @@ class RouteManager(Node):
 
     def publish_markers(self):
         data = load_routes(self.route_file)
+        active_route = self.get_parameter('active_route').value
         marker_array = MarkerArray()
         marker_id = 0
 
@@ -32,6 +34,9 @@ class RouteManager(Node):
         marker_array.markers.append(delete_marker)
 
         for route_name, route in data.get('routes', {}).items():
+            if active_route and route_name != active_route:
+                continue
+
             frame_id = route.get('frame_id', 'map')
             waypoints = route.get('waypoints', [])
             if not waypoints:

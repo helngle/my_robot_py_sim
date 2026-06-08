@@ -124,9 +124,11 @@ class SafetyForbiddenGrid(Node):
         self.declare_parameter('base_frame', 'base_footprint')
         self.declare_parameter('resolution', 0.10)
         self.declare_parameter('grid_size', 10.0)
+        self.declare_parameter('forward_offset', 0.0)
         self.declare_parameter('max_points', 5000)
         self.declare_parameter('planning_padding', -1.0)
         self.declare_parameter('self_filter_padding', 0.03)
+        self.declare_parameter('obstacle_keep_time', 0.0)
         self.declare_parameter('min_obstacle_z', 0.25)
         self.declare_parameter('max_obstacle_z', 1.8)
 
@@ -134,13 +136,16 @@ class SafetyForbiddenGrid(Node):
         self.base_frame = self.get_parameter('base_frame').value
         self.resolution = float(self.get_parameter('resolution').value)
         self.grid_size = float(self.get_parameter('grid_size').value)
+        self.forward_offset = float(self.get_parameter('forward_offset').value)
         self.width = int(round(self.grid_size / self.resolution))
         self.height = self.width
         self.max_points = int(self.get_parameter('max_points').value)
         self.planning_padding = float(self.get_parameter('planning_padding').value)
         self.self_filter_padding = float(self.get_parameter('self_filter_padding').value)
+        self.obstacle_keep_time = float(self.get_parameter('obstacle_keep_time').value)
         self.min_obstacle_z = float(self.get_parameter('min_obstacle_z').value)
         self.max_obstacle_z = float(self.get_parameter('max_obstacle_z').value)
+        self.occupied_cells = {}
 
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
@@ -240,9 +245,12 @@ class SafetyForbiddenGrid(Node):
             return
         self_filter_volumes = self.make_self_filter_volumes()
 
-        origin_x = base_to_fixed.transform.translation.x - 0.5 * self.grid_size
-        origin_y = base_to_fixed.transform.translation.y - 0.5 * self.grid_size
-        data = [0] * (self.width * self.height)
+        yaw = yaw_from_quaternion(base_to_fixed.transform.rotation)
+        center_x = base_to_fixed.transform.translation.x + self.forward_offset * math.cos(yaw)
+        center_y = base_to_fixed.transform.translation.y + self.forward_offset * math.sin(yaw)
+        origin_x = center_x - 0.5 * self.grid_size
+        origin_y = center_y - 0.5 * self.grid_size
+        now = self.get_clock().now().nanoseconds * 1e-9
 
         for raw_point in iter_xyz_points(cloud, self.max_points):
             point_in_base = transform_point(cloud_to_base, raw_point)
@@ -256,8 +264,9 @@ class SafetyForbiddenGrid(Node):
             for profile in shell_profiles:
                 if point[2] < profile['min_z'] or point[2] > profile['max_z']:
                     continue
-                self.mark_forbidden_cells(data, origin_x, origin_y, point, profile)
+                self.mark_forbidden_cells(point, profile, now)
 
+        data = self.make_grid_data(origin_x, origin_y, now)
         self.publisher.publish(self.make_grid(data, origin_x, origin_y))
 
     def lookup_transform(self, target, source, stamp):
@@ -431,7 +440,7 @@ class SafetyForbiddenGrid(Node):
         )
         return transform_point(shell_to_base, local)
 
-    def mark_forbidden_cells(self, data, origin_x, origin_y, point, profile):
+    def mark_forbidden_cells(self, point, profile, stamp):
         cos_yaw = profile['cos_yaw']
         sin_yaw = profile['sin_yaw']
         for offset_x, offset_y in profile['offsets']:
@@ -439,10 +448,34 @@ class SafetyForbiddenGrid(Node):
             rotated_y = sin_yaw * offset_x + cos_yaw * offset_y
             base_x = point[0] - rotated_x
             base_y = point[1] - rotated_y
-            grid_x = int((base_x - origin_x) / self.resolution)
-            grid_y = int((base_y - origin_y) / self.resolution)
+            world_x = int(math.floor(base_x / self.resolution))
+            world_y = int(math.floor(base_y / self.resolution))
+            self.occupied_cells[(world_x, world_y)] = stamp
+
+    def make_grid_data(self, origin_x, origin_y, stamp):
+        data = [0] * (self.width * self.height)
+        if self.obstacle_keep_time > 0.0:
+            cutoff = stamp - self.obstacle_keep_time
+            self.occupied_cells = {
+                cell: last_seen
+                for cell, last_seen in self.occupied_cells.items()
+                if last_seen >= cutoff
+            }
+        else:
+            self.occupied_cells = {
+                cell: last_seen
+                for cell, last_seen in self.occupied_cells.items()
+                if last_seen == stamp
+            }
+
+        for world_x, world_y in self.occupied_cells:
+            cell_x = world_x * self.resolution
+            cell_y = world_y * self.resolution
+            grid_x = int((cell_x - origin_x) / self.resolution)
+            grid_y = int((cell_y - origin_y) / self.resolution)
             if 0 <= grid_x < self.width and 0 <= grid_y < self.height:
                 data[grid_y * self.width + grid_x] = 100
+        return data
 
     def make_grid(self, data, origin_x, origin_y):
         grid = OccupancyGrid()

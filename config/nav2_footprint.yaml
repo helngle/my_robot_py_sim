@@ -1,21 +1,17 @@
-# Base footprint for future Navigation2 costmaps.
+# Full mobile-manipulator radius for Navigation2 costmaps.
 #
-# This is intentionally only the mobile base footprint, not the full
-# manipulator safety shell. The full-body shell is published separately on
-# /safety_shell_array for future 3D clearance checks.
+# This radius includes the currently fixed open arm pose. Obstacles still enter
+# Nav2 as normal 2D map / laser-scan costs; the larger robot radius makes Nav2
+# reject corridors that the unfolded manipulator body cannot fit through.
 #
 # Coordinates are in base_footprint:
 #   +x forward, +y left.
 local_costmap:
   local_costmap:
     ros__parameters:
-      footprint: "[[0.36, 0.395], [0.36, -0.395], [-0.36, -0.395], [-0.36, 0.395]]"
-      footprint_padding: 0.0
-      robot_radius: 0.0
+      robot_radius: 0.93
 
 global_costmap:
   global_costmap:
     ros__parameters:
-      footprint: "[[0.36, 0.395], [0.36, -0.395], [-0.36, -0.395], [-0.36, 0.395]]"
-      footprint_padding: 0.0
-      robot_radius: 0.0
+      robot_radius: 0.93

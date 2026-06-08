@@ -123,7 +123,7 @@ Visualization Manager:
       Draw Behind: true
     - Class: rviz_default_plugins/Map
       Name: SafetyForbiddenGrid
-      Enabled: true
+      Enabled: false
       Topic:
         Depth: 1
         Durability Policy: Volatile
@@ -141,7 +141,7 @@ Visualization Manager:
       Draw Behind: false
     - Class: rviz_default_plugins/Map
       Name: PlanningMap
-      Enabled: true
+      Enabled: false
       Topic:
         Depth: 1
         Durability Policy: Transient Local

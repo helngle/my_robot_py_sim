@@ -1,0 +1,121 @@
+safety_shell:
+  marker_topic: /safety_shell_array
+  padding: 0.02
+  planning_padding: 0.0
+  alpha: 0.22
+  color: [0.10, 0.75, 0.95]
+
+  shells:
+    - name: base
+      frame_id: base_link
+      shape: box
+      planning_enabled: false
+      size: [0.72, 0.56, 0.24]
+      pose: [0, 0, 0, 0, 0, 0, 1]
+
+    - name: front_left_wheel
+      frame_id: front_left_wheel_link
+      shape: cylinder
+      planning_enabled: false
+      radius: 0.105
+      length: 0.11
+      pose: [0, 0, 0, 0.70710678, 0, 0, 0.70710678]
+
+    - name: front_right_wheel
+      frame_id: front_right_wheel_link
+      shape: cylinder
+      planning_enabled: false
+      radius: 0.105
+      length: 0.11
+      pose: [0, 0, 0, 0.70710678, 0, 0, 0.70710678]
+
+    - name: rear_left_wheel
+      frame_id: rear_left_wheel_link
+      shape: cylinder
+      planning_enabled: false
+      radius: 0.105
+      length: 0.11
+      pose: [0, 0, 0, 0.70710678, 0, 0, 0.70710678]
+
+    - name: rear_right_wheel
+      frame_id: rear_right_wheel_link
+      shape: cylinder
+      planning_enabled: false
+      radius: 0.105
+      length: 0.11
+      pose: [0, 0, 0, 0.70710678, 0, 0, 0.70710678]
+
+    - name: torso
+      frame_id: torso_link
+      planning_enabled: true
+      shape: box
+      size: [0.44, 0.36, 0.68]
+      pose: [0, 0, 0, 0, 0, 0, 1]
+
+    - name: head
+      frame_id: head_sensor_link
+      shape: box
+      planning_enabled: true
+      size: [0.26, 0.24, 0.18]
+      pose: [0, 0, 0, 0, 0, 0, 1]
+
+    - name: sensor_mount
+      frame_id: sensor_mount_link
+      shape: box
+      planning_enabled: true
+      size: [0.16, 0.12, 0.08]
+      pose: [0, 0, 0, 0, 0, 0, 1]
+
+    - name: lidar
+      frame_id: lidar_link
+      shape: cylinder
+      planning_enabled: true
+      radius: 0.07
+      length: 0.08
+      pose: [0, 0, 0, 0, 0, 0, 1]
+
+    - name: left_upper_arm
+      frame_id: left_upper_arm_link
+      shape: cylinder
+      planning_enabled: true
+      radius: 0.045
+      length: 0.34
+      pose: [0, 0, -0.17, 0, 0, 0, 1]
+
+    - name: left_forearm
+      frame_id: left_forearm_link
+      shape: cylinder
+      planning_enabled: true
+      radius: 0.04
+      length: 0.30
+      pose: [0, 0, -0.15, 0, 0, 0, 1]
+
+    - name: left_hand
+      frame_id: left_hand_link
+      shape: box
+      planning_enabled: true
+      size: [0.10, 0.07, 0.12]
+      pose: [0, 0, 0, 0, 0, 0, 1]
+
+    - name: right_upper_arm
+      frame_id: right_upper_arm_link
+      shape: cylinder
+      planning_enabled: true
+      radius: 0.045
+      length: 0.34
+      pose: [0, 0, -0.17, 0, 0, 0, 1]
+
+    - name: right_forearm
+      frame_id: right_forearm_link
+      shape: cylinder
+      planning_enabled: true
+      radius: 0.04
+      length: 0.30
+      pose: [0, 0, -0.15, 0, 0, 0, 1]
+
+    - name: right_hand
+      frame_id: right_hand_link
+      shape: box
+      planning_enabled: true
+      size: [0.10, 0.07, 0.12]
+      pose: [0, 0, 0, 0, 0, 0, 1]

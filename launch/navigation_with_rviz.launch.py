@@ -25,6 +25,7 @@ def generate_launch_description():
     world_file = os.path.join(pkg_my_robot, 'worlds', 'door_world.sdf')
     amcl_config = os.path.join(pkg_my_robot, 'config', 'amcl.yaml')
     nav2_config = os.path.join(pkg_my_robot, 'config', 'nav2_navigation.yaml')
+    safety_shell_config = os.path.join(pkg_my_robot, 'config', 'safety_shell.yaml')
     rviz_config = os.path.join(pkg_my_robot, 'rviz', 'view_robot.rviz')
 
     gazebo = IncludeLaunchDescription(
@@ -77,12 +78,12 @@ def generate_launch_description():
         output='screen',
     )
 
-    odom_bridge = Node(
+    pose_bridge = Node(
         package='ros_gz_bridge',
         executable='parameter_bridge',
-        name='odom_bridge',
-        arguments=['/model/mobile_manipulator/odometry@nav_msgs/msg/Odometry[ignition.msgs.Odometry'],
-        remappings=[('/model/mobile_manipulator/odometry', '/odom')],
+        name='pose_bridge',
+        arguments=['/world/door_passage_test/pose/info@tf2_msgs/msg/TFMessage[ignition.msgs.Pose_V'],
+        remappings=[('/world/door_passage_test/pose/info', '/gazebo_pose_info')],
         output='screen',
     )
 
@@ -150,15 +151,18 @@ def generate_launch_description():
         output='screen',
     )
 
-    odom_to_tf = Node(
+    gazebo_pose_odom = Node(
         package='my_robot_py_sim',
-        executable='odom_to_tf',
-        name='odom_to_tf',
+        executable='gazebo_pose_odom',
+        name='gazebo_pose_odom',
         parameters=[{
             'use_sim_time': True,
+            'pose_topic': '/gazebo_pose_info',
+            'model_name': 'mobile_manipulator',
             'odom_topic': '/odom',
             'odom_frame': 'odom',
             'base_frame': 'base_footprint',
+            'publish_tf': True,
         }],
         output='screen',
     )
@@ -214,7 +218,8 @@ def generate_launch_description():
         parameters=[{
             'use_sim_time': True,
             'topic': '/safety_shell_array',
-            'padding': 0.06,
+            'config_file': safety_shell_config,
+            'padding': 0.02,
             'alpha': 0.22,
         }],
         output='screen',
@@ -228,9 +233,59 @@ def generate_launch_description():
             'use_sim_time': True,
             'topic': '/base_footprint_marker',
             'frame_id': 'base_footprint',
-            'length': 0.84,
-            'width': 0.84,
+            'length': 0.72,
+            'width': 0.79,
             'z_offset': 0.025,
+        }],
+        output='screen',
+    )
+
+    safety_forbidden_grid = Node(
+        package='my_robot_py_sim',
+        executable='safety_forbidden_grid',
+        name='safety_forbidden_grid',
+        parameters=[{
+            'use_sim_time': True,
+            'cloud_topic': '/lidar/points',
+            'grid_topic': '/safety_forbidden_grid',
+            'config_file': safety_shell_config,
+            'fixed_frame': 'odom',
+            'base_frame': 'base_footprint',
+            'resolution': 0.05,
+            'grid_size': 10.0,
+            'max_points': 5000,
+            'planning_padding': 0.0,
+            'self_filter_padding': 0.03,
+            'min_obstacle_z': 0.25,
+        }],
+        output='screen',
+    )
+
+    grid_to_pointcloud = Node(
+        package='my_robot_py_sim',
+        executable='grid_to_pointcloud',
+        name='grid_to_pointcloud',
+        parameters=[{
+            'use_sim_time': True,
+            'grid_topic': '/safety_forbidden_grid',
+            'cloud_topic': '/safety_forbidden_cloud',
+            'occupied_threshold': 50,
+            'point_z': 0.5,
+            'publish_rate': 5.0,
+        }],
+        output='screen',
+    )
+
+    planning_map_fusion = Node(
+        package='my_robot_py_sim',
+        executable='planning_map_fusion',
+        name='planning_map_fusion',
+        parameters=[{
+            'use_sim_time': True,
+            'map_topic': '/map',
+            'safety_grid_topic': '/safety_forbidden_grid',
+            'planning_map_topic': '/planning_map',
+            'occupied_threshold': 50,
         }],
         output='screen',
     )
@@ -250,15 +305,18 @@ def generate_launch_description():
         gazebo,
         clock_bridge,
         cmd_vel_bridge,
-        odom_bridge,
+        pose_bridge,
         joint_state_bridge,
         lidar_points_bridge,
         lidar_frame_tf,
         pointcloud_to_scan,
-        odom_to_tf,
+        gazebo_pose_odom,
         robot_state_pub,
         safety_shell,
         footprint_marker,
+        safety_forbidden_grid,
+        grid_to_pointcloud,
+        planning_map_fusion,
         TimerAction(period=3.0, actions=[spawn_robot]),
         TimerAction(period=7.0, actions=[
             map_server,

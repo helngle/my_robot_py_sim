@@ -18,6 +18,7 @@ def generate_launch_description():
 
     world_file = os.path.join(pkg_my_robot, 'worlds', 'door_world.sdf')
     slam_config = os.path.join(pkg_my_robot, 'config', 'slam_toolbox.yaml')
+    safety_shell_config = os.path.join(pkg_my_robot, 'config', 'safety_shell.yaml')
 
     # Start Ignition Gazebo
     gazebo = IncludeLaunchDescription(
@@ -178,7 +179,8 @@ def generate_launch_description():
         parameters=[{
             'use_sim_time': True,
             'topic': '/safety_shell_array',
-            'padding': 0.06,
+            'config_file': safety_shell_config,
+            'padding': 0.02,
             'alpha': 0.22,
         }],
         output='screen',
@@ -192,8 +194,8 @@ def generate_launch_description():
             'use_sim_time': True,
             'topic': '/base_footprint_marker',
             'frame_id': 'base_footprint',
-            'length': 0.84,
-            'width': 0.84,
+            'length': 0.72,
+            'width': 0.79,
             'z_offset': 0.025,
         }],
         output='screen',

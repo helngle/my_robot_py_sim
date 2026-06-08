@@ -4,6 +4,8 @@ Panels:
   - Class: rviz_common/Views
     collapsed: true
     Name: Views
+  - Class: nav2_rviz_plugins/Navigation 2
+    Name: Navigation 2
 Visualization Manager:
   Displays:
     - Alpha: 0.45
@@ -80,8 +82,8 @@ Visualization Manager:
       Queue Size: 10
       Selectable: true
       Style: Points
-      Size (Pixels): 3
-      Alpha: 0.85
+      Size (Pixels): 2
+      Alpha: 0.45
       Color Transformer: AxisColor
       Axis: Z
       Use Fixed Frame: true
@@ -97,8 +99,8 @@ Visualization Manager:
       Queue Size: 10
       Selectable: true
       Style: Flat Squares
-      Size (Pixels): 5
-      Alpha: 0.9
+      Size (Pixels): 3
+      Alpha: 0.45
       Color: 255; 230; 80
       Color Transformer: FlatColor
     - Class: rviz_default_plugins/Map
@@ -119,6 +121,42 @@ Visualization Manager:
       Alpha: 0.65
       Color Scheme: map
       Draw Behind: true
+    - Class: rviz_default_plugins/Map
+      Name: SafetyForbiddenGrid
+      Enabled: true
+      Topic:
+        Depth: 1
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /safety_forbidden_grid
+      Update Topic:
+        Depth: 10
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /safety_forbidden_grid_updates
+      Alpha: 0.18
+      Color Scheme: costmap
+      Draw Behind: false
+    - Class: rviz_default_plugins/Map
+      Name: PlanningMap
+      Enabled: true
+      Topic:
+        Depth: 1
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /planning_map
+      Update Topic:
+        Depth: 10
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /planning_map_updates
+      Alpha: 0.28
+      Color Scheme: map
+      Draw Behind: false
     - Class: rviz_common/Group
       Name: Nav2Global
       Enabled: true
@@ -138,7 +176,7 @@ Visualization Manager:
             History Policy: Keep Last
             Reliability Policy: Reliable
             Value: /global_costmap/costmap_updates
-          Alpha: 0.28
+          Alpha: 0.20
           Color Scheme: costmap
           Draw Behind: false
         - Class: rviz_default_plugins/Path

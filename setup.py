@@ -45,7 +45,10 @@ setup(
             'odom_to_tf = my_robot_py_sim.odom_to_tf:main',
             'footprint_marker = my_robot_py_sim.footprint_marker:main',
             'full_body_clearance_checker = my_robot_py_sim.full_body_clearance_checker:main',
+            'planning_map_fusion = my_robot_py_sim.planning_map_fusion:main',
+            'safety_forbidden_grid = my_robot_py_sim.safety_forbidden_grid:main',
             'safety_shell_marker = my_robot_py_sim.safety_shell_marker:main',
+            'grid_to_pointcloud = my_robot_py_sim.grid_to_pointcloud:main',
         ],
     },
 )

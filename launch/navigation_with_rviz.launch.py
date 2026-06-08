@@ -3,6 +3,7 @@ import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, SetEnvironmentVariable, TimerAction
+from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -17,6 +18,7 @@ def generate_launch_description():
 
     default_map = os.path.expanduser('~/ros2_ws/my_first_map.yaml')
     map_file = LaunchConfiguration('map')
+    use_route = LaunchConfiguration('use_route')
 
     urdf_file = os.path.join(pkg_my_robot, 'urdf', 'mobile_manipulator.urdf')
     with open(urdf_file, 'r') as f:
@@ -25,6 +27,9 @@ def generate_launch_description():
     world_file = os.path.join(pkg_my_robot, 'worlds', 'door_world.sdf')
     amcl_config = os.path.join(pkg_my_robot, 'config', 'amcl.yaml')
     nav2_config = os.path.join(pkg_my_robot, 'config', 'nav2_navigation.yaml')
+    route_config = os.path.join(pkg_my_robot, 'config', 'nav2_route.yaml')
+    route_graph = os.path.join(pkg_my_robot, 'config', 'route_graph.geojson')
+    routes_file = os.path.join(pkg_my_robot, 'config', 'routes.yaml')
     safety_shell_config = os.path.join(pkg_my_robot, 'config', 'safety_shell.yaml')
     rviz_config = os.path.join(pkg_my_robot, 'rviz', 'view_robot.rviz')
 
@@ -211,6 +216,47 @@ def generate_launch_description():
         }.items(),
     )
 
+    route_server = Node(
+        package='nav2_route',
+        executable='route_server',
+        name='route_server',
+        condition=IfCondition(use_route),
+        output='screen',
+        parameters=[
+            route_config,
+            {
+                'use_sim_time': True,
+                'graph_filepath': route_graph,
+            },
+        ],
+    )
+
+    route_lifecycle = Node(
+        package='nav2_lifecycle_manager',
+        executable='lifecycle_manager',
+        name='lifecycle_manager_route',
+        condition=IfCondition(use_route),
+        output='screen',
+        parameters=[{
+            'use_sim_time': True,
+            'autostart': True,
+            'node_names': ['route_server'],
+        }],
+    )
+
+    route_manager = Node(
+        package='my_robot_py_sim',
+        executable='route_manager',
+        name='route_manager',
+        parameters=[{
+            'use_sim_time': True,
+            'route_file': routes_file,
+            'marker_topic': '/route_markers',
+            'publish_rate': 1.0,
+        }],
+        output='screen',
+    )
+
     safety_shell = Node(
         package='my_robot_py_sim',
         executable='safety_shell_marker',
@@ -302,6 +348,7 @@ def generate_launch_description():
 
     return LaunchDescription([
         DeclareLaunchArgument('map', default_value=default_map),
+        DeclareLaunchArgument('use_route', default_value='false'),
         SetEnvironmentVariable('ROS_DOMAIN_ID', '23'),
         SetEnvironmentVariable('ROS_LOCALHOST_ONLY', '1'),
         gazebo,
@@ -316,6 +363,7 @@ def generate_launch_description():
         robot_state_pub,
         safety_shell,
         footprint_marker,
+        route_manager,
         TimerAction(period=3.0, actions=[spawn_robot]),
         TimerAction(period=7.0, actions=[
             map_server,
@@ -323,5 +371,9 @@ def generate_launch_description():
             localization_lifecycle,
         ]),
         TimerAction(period=10.0, actions=[navigation]),
+        TimerAction(period=11.0, actions=[
+            route_server,
+            route_lifecycle,
+        ]),
         TimerAction(period=12.0, actions=[rviz]),
     ])

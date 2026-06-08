@@ -49,6 +49,7 @@ setup(
             'safety_forbidden_grid = my_robot_py_sim.safety_forbidden_grid:main',
             'safety_shell_marker = my_robot_py_sim.safety_shell_marker:main',
             'grid_to_pointcloud = my_robot_py_sim.grid_to_pointcloud:main',
+            'route_player = my_robot_py_sim.route_player:main',
         ],
     },
 )

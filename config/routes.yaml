@@ -1,0 +1,10 @@
+routes:
+  door_test_route:
+    frame_id: map
+    retry_count: 3
+    retry_delay: 1.0
+    waypoints:
+      - {x: -1.5, y: 0.0, yaw: 0.0}
+      - {x: -0.5, y: 0.8, yaw: 0.0}
+      - {x: 0.8, y: 0.8, yaw: 0.0}
+      - {x: 1.8, y: 0.0, yaw: 0.0}

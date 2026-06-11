@@ -23,12 +23,13 @@ class PlanningMapFusion(Node):
         super().__init__('planning_map_fusion')
         self.declare_parameter('map_topic', '/map')
         self.declare_parameter('safety_grid_topic', '/safety_forbidden_grid')
+        self.declare_parameter('static_safety_grid_topic', '')
         self.declare_parameter('planning_map_topic', '/planning_map')
         self.declare_parameter('occupied_threshold', 50)
 
         self.occupied_threshold = int(self.get_parameter('occupied_threshold').value)
         self.static_map = None
-        self.safety_grid = None
+        self.safety_grids = {}
 
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
@@ -37,8 +38,8 @@ class PlanningMapFusion(Node):
         transient_qos.reliability = ReliabilityPolicy.RELIABLE
         transient_qos.durability = DurabilityPolicy.TRANSIENT_LOCAL
 
-        volatile_qos = QoSProfile(depth=1)
-        volatile_qos.reliability = ReliabilityPolicy.RELIABLE
+        reliable_qos = QoSProfile(depth=1)
+        reliable_qos.reliability = ReliabilityPolicy.RELIABLE
 
         self.publisher = self.create_publisher(
             OccupancyGrid,
@@ -51,11 +52,21 @@ class PlanningMapFusion(Node):
             self.handle_map,
             transient_qos,
         )
-        self.safety_subscription = self.create_subscription(
-            OccupancyGrid,
-            self.get_parameter('safety_grid_topic').value,
-            self.handle_safety_grid,
-            volatile_qos,
+        self.safety_subscriptions = []
+        safety_topics = self.safety_grid_topics()
+        for topic in safety_topics:
+            qos = transient_qos if topic.startswith('/static_') else reliable_qos
+            self.safety_subscriptions.append(
+                self.create_subscription(
+                    OccupancyGrid,
+                    topic,
+                    self.make_safety_grid_handler(topic),
+                    qos,
+                )
+            )
+        self.get_logger().info(
+            'Planning map safety inputs: '
+            + ', '.join(safety_topics)
         )
 
         self.timer = self.create_timer(0.5, self.publish_planning_map)
@@ -64,8 +75,24 @@ class PlanningMapFusion(Node):
         self.static_map = msg
         self.publish_planning_map()
 
+    def safety_grid_topics(self):
+        topics = []
+        static_topic = self.get_parameter('static_safety_grid_topic').value
+        safety_topic = self.get_parameter('safety_grid_topic').value
+        if static_topic:
+            topics.append(static_topic)
+        if safety_topic:
+            topics.append(safety_topic)
+        return topics
+
+    def make_safety_grid_handler(self, topic):
+        def handle_safety_grid(msg):
+            self.safety_grids[topic] = msg
+            self.publish_planning_map()
+        return handle_safety_grid
+
     def handle_safety_grid(self, msg):
-        self.safety_grid = msg
+        self.safety_grids[self.get_parameter('safety_grid_topic').value] = msg
         self.publish_planning_map()
 
     def publish_planning_map(self):
@@ -75,9 +102,9 @@ class PlanningMapFusion(Node):
         planning_map = copy.deepcopy(self.static_map)
         planning_map.header.stamp = self.get_clock().now().to_msg()
 
-        if self.safety_grid is not None:
+        for safety_grid in self.safety_grids.values():
             try:
-                self.overlay_safety_grid(planning_map, self.safety_grid)
+                self.overlay_safety_grid(planning_map, safety_grid)
             except TransformException as exc:
                 self.get_logger().debug(f'Waiting to overlay safety grid: {exc}')
 

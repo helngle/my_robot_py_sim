@@ -12,9 +12,13 @@ class OdomToTf(Node):
         self.declare_parameter('odom_topic', '/odom')
         self.declare_parameter('odom_frame', 'odom')
         self.declare_parameter('base_frame', 'base_footprint')
+        self.declare_parameter('stamp_with_current_time', False)
 
         self.odom_frame = self.get_parameter('odom_frame').value
         self.base_frame = self.get_parameter('base_frame').value
+        self.stamp_with_current_time = (
+            self.get_parameter('stamp_with_current_time').value
+        )
         self.broadcaster = TransformBroadcaster(self)
         self.subscription = self.create_subscription(
             Odometry,
@@ -25,7 +29,10 @@ class OdomToTf(Node):
 
     def handle_odom(self, msg):
         transform = TransformStamped()
-        transform.header.stamp = msg.header.stamp
+        if self.stamp_with_current_time:
+            transform.header.stamp = self.get_clock().now().to_msg()
+        else:
+            transform.header.stamp = msg.header.stamp
         transform.header.frame_id = self.odom_frame
         transform.child_frame_id = self.base_frame
         transform.transform.translation.x = msg.pose.pose.position.x

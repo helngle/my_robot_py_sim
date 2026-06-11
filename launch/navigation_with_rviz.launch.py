@@ -3,7 +3,7 @@ import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, SetEnvironmentVariable, TimerAction
-from launch.conditions import IfCondition
+from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -19,6 +19,8 @@ def generate_launch_description():
     default_map = os.path.expanduser('~/ros2_ws/my_first_map.yaml')
     map_file = LaunchConfiguration('map')
     use_route = LaunchConfiguration('use_route')
+    nav2_params = LaunchConfiguration('nav2_params')
+    use_25d_avoidance = LaunchConfiguration('use_25d_avoidance')
 
     urdf_file = os.path.join(pkg_my_robot, 'urdf', 'mobile_manipulator.urdf')
     with open(urdf_file, 'r') as f:
@@ -210,10 +212,22 @@ def generate_launch_description():
         launch_arguments={
             'use_sim_time': 'true',
             'autostart': 'true',
-            'params_file': nav2_config,
+            'params_file': nav2_params,
             'use_composition': 'False',
             'use_respawn': 'False',
         }.items(),
+    )
+
+    navigation_2d = TimerAction(
+        period=10.0,
+        condition=UnlessCondition(use_25d_avoidance),
+        actions=[navigation],
+    )
+
+    navigation_25d = TimerAction(
+        period=15.0,
+        condition=IfCondition(use_25d_avoidance),
+        actions=[navigation],
     )
 
     route_server = Node(
@@ -286,10 +300,35 @@ def generate_launch_description():
         output='screen',
     )
 
+    static_25d_forbidden_grid = Node(
+        package='my_robot_py_sim',
+        executable='static_25d_forbidden_grid',
+        name='static_25d_forbidden_grid',
+        condition=IfCondition(use_25d_avoidance),
+        parameters=[{
+            'use_sim_time': True,
+            'world_file': world_file,
+            'urdf_file': urdf_file,
+            'config_file': safety_shell_config,
+            'grid_topic': '/static_25d_forbidden_grid',
+            'frame_id': 'map',
+            'base_frame': 'base_footprint',
+            'resolution': 0.10,
+            'origin_x': -7.0,
+            'origin_y': -5.0,
+            'size_x': 14.0,
+            'size_y': 10.0,
+            'yaw_samples': 16,
+            'planning_padding': 0.0,
+        }],
+        output='screen',
+    )
+
     safety_forbidden_grid = Node(
         package='my_robot_py_sim',
         executable='safety_forbidden_grid',
         name='safety_forbidden_grid',
+        condition=IfCondition(use_25d_avoidance),
         parameters=[{
             'use_sim_time': True,
             'cloud_topic': '/lidar/points',
@@ -313,6 +352,7 @@ def generate_launch_description():
         package='my_robot_py_sim',
         executable='grid_to_pointcloud',
         name='grid_to_pointcloud',
+        condition=IfCondition(use_25d_avoidance),
         parameters=[{
             'use_sim_time': True,
             'grid_topic': '/safety_forbidden_grid',
@@ -328,9 +368,11 @@ def generate_launch_description():
         package='my_robot_py_sim',
         executable='planning_map_fusion',
         name='planning_map_fusion',
+        condition=IfCondition(use_25d_avoidance),
         parameters=[{
             'use_sim_time': True,
             'map_topic': '/map',
+            'static_safety_grid_topic': '',
             'safety_grid_topic': '/safety_forbidden_grid',
             'planning_map_topic': '/planning_map',
             'occupied_threshold': 50,
@@ -349,6 +391,8 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument('map', default_value=default_map),
         DeclareLaunchArgument('use_route', default_value='false'),
+        DeclareLaunchArgument('nav2_params', default_value=nav2_config),
+        DeclareLaunchArgument('use_25d_avoidance', default_value='false'),
         SetEnvironmentVariable('ROS_DOMAIN_ID', '23'),
         SetEnvironmentVariable('ROS_LOCALHOST_ONLY', '1'),
         gazebo,
@@ -364,13 +408,17 @@ def generate_launch_description():
         safety_shell,
         footprint_marker,
         route_manager,
+        safety_forbidden_grid,
+        grid_to_pointcloud,
+        planning_map_fusion,
         TimerAction(period=3.0, actions=[spawn_robot]),
         TimerAction(period=7.0, actions=[
             map_server,
             amcl,
             localization_lifecycle,
         ]),
-        TimerAction(period=10.0, actions=[navigation]),
+        navigation_2d,
+        navigation_25d,
         TimerAction(period=11.0, actions=[
             route_server,
             route_lifecycle,

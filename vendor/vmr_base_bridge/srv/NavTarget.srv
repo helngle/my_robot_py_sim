@@ -1,0 +1,10 @@
+# Leave empty to navigate by x/y/theta.
+string site_name
+float64 x
+float64 y
+float64 theta
+---
+# Response
+bool success
+string task_id
+string message

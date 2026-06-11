@@ -1,0 +1,8 @@
+# Move along an arbitrary relative direction.
+# angle is in radians, relative to robot forward direction.
+float64 distance
+float64 angle
+---
+bool success
+string task_id
+string message

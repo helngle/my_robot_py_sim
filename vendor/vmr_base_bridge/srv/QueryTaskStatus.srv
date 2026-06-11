@@ -1,0 +1,7 @@
+string task_id
+---
+bool success
+int32 task_flag
+int32 task_result
+string task_id_echo
+string message

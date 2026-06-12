@@ -1,0 +1,11 @@
+# 顶层键必须与 launch 里 Node 的 name= 一致，否则参数不会加载（会用代码里的默认值）
+pose_estimetor:
+  ros__parameters:
+    source_topic: "/seer_pose"
+    target_topic: "/estimated_pose"
+    odom_topic: "/estimated_odom"
+    parent_frame: "map"
+    target_frame: "base_link"
+    target_frequency: 100.0
+    interpolation_interval_sec: 0.1  # Max time to trust old velocity
+    publish_tf: true

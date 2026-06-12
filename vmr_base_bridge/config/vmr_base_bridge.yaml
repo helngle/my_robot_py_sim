@@ -1,0 +1,33 @@
+vmr_base_bridge_node:
+  ros__parameters:
+    service:
+      step_move_name: "/vmr_base_bridge/step_move"
+      vector_move_name: "/vmr_base_bridge/vector_move"
+      nav_target_name: "/vmr_base_bridge/nav_target"
+      cancel_task_name: "/vmr_base_bridge/cancel_task"
+      query_task_status_name: "/vmr_base_bridge/query_task_status"
+      control_relay_name: "/vmr_base_bridge/control_relay"
+    topics:
+      cmd_vel: "/cmd_vel"
+      laser: "/vmr_base_bridge/laser/points"
+      location: "/vmr_base_bridge/location"
+      pose: "/vmr_base_bridge/pose"
+      odom: "/vmr_base_bridge/odom"
+      battery: "/vmr_base_bridge/battery"
+      imu: "/vmr_base_bridge/imu"
+      imu_pose: "/vmr_base_bridge/imu_pose"
+      move_status: "/vmr_base_bridge/move_status"
+    frames:
+      base_frame: "base_link"
+      odom_frame: "odom"
+      map_frame: "map"
+    publishers:
+      qos_depth: 10
+    cmd_vel:
+      enabled: false
+      timeout: 0.5
+      rate_hz: 30.0
+      speed_factor: 0.3
+      max_linear_x: 0.2
+      max_linear_y: 0.0
+      max_angular_z: 0.5

@@ -176,6 +176,21 @@ def generate_launch_description():
         output='screen',
     )
 
+    footprint_marker = Node(
+        package='my_robot_py_sim',
+        executable='footprint_marker',
+        name='footprint_marker',
+        parameters=[{
+            'use_sim_time': False,
+            'topic': '/base_footprint_marker',
+            'frame_id': 'base_footprint',
+            'length': 0.80,
+            'width': 0.70,
+            'z_offset': 0.025,
+        }],
+        output='screen',
+    )
+
     navigation = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(pkg_nav2_bringup, 'launch', 'navigation_launch.py')
@@ -234,6 +249,7 @@ def generate_launch_description():
         pointcloud_restamper,
         pointcloud_to_scan,
         route_manager,
+        footprint_marker,
         TimerAction(period=2.0, actions=[
             map_server,
             map_lifecycle,

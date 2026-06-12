@@ -769,7 +769,6 @@ void VmrBaseBridge::publishCmdVelToSdk()
     last_sent_cmd_vel_.angular.z = twist.angular.z;
     ++cmd_vel_sent_count_;
   }
-  logCmdVelDiagnostics(current_time);
 }
 
 void VmrBaseBridge::logCmdVelDiagnostics(const rclcpp::Time & current_time)

@@ -53,6 +53,7 @@ setup(
             'odom_to_tf = my_robot_py_sim.odom_to_tf:main',
             'sdk_pose_to_map_odom_tf = my_robot_py_sim.sdk_pose_to_map_odom_tf:main',
             'sdk_pose_to_map_tf = my_robot_py_sim.sdk_pose_to_map_tf:main',
+            'pointcloud_restamper = my_robot_py_sim.pointcloud_restamper:main',
             'footprint_marker = my_robot_py_sim.footprint_marker:main',
             'full_body_clearance_checker = my_robot_py_sim.full_body_clearance_checker:main',
             'planning_map_fusion = my_robot_py_sim.planning_map_fusion:main',

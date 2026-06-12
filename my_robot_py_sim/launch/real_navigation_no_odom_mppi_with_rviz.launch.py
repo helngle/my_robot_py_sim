@@ -30,6 +30,7 @@ def generate_launch_description():
     use_base_driver = LaunchConfiguration('use_base_driver')
     use_joint_state_publisher = LaunchConfiguration('use_joint_state_publisher')
     cmd_vel_enabled = LaunchConfiguration('cmd_vel_enabled')
+    cmd_vel_topic = LaunchConfiguration('cmd_vel_topic')
     cmd_vel_max_linear_x = LaunchConfiguration('cmd_vel_max_linear_x')
     cmd_vel_max_linear_y = LaunchConfiguration('cmd_vel_max_linear_y')
     cmd_vel_max_angular_z = LaunchConfiguration('cmd_vel_max_angular_z')
@@ -40,6 +41,7 @@ def generate_launch_description():
     map_file = LaunchConfiguration('map')
     pose_topic = LaunchConfiguration('pose_topic')
     laser_cloud_topic = LaunchConfiguration('laser_cloud_topic')
+    stamped_laser_cloud_topic = LaunchConfiguration('stamped_laser_cloud_topic')
     scan_topic = LaunchConfiguration('scan_topic')
 
     base_driver = IncludeLaunchDescription(
@@ -49,6 +51,7 @@ def generate_launch_description():
         condition=IfCondition(use_base_driver),
         launch_arguments={
             'cmd_vel_enabled': cmd_vel_enabled,
+            'cmd_vel_topic': cmd_vel_topic,
             'cmd_vel_max_linear_x': cmd_vel_max_linear_x,
             'cmd_vel_max_linear_y': cmd_vel_max_linear_y,
             'cmd_vel_max_angular_z': cmd_vel_max_angular_z,
@@ -120,6 +123,19 @@ def generate_launch_description():
         }],
     )
 
+    pointcloud_restamper = Node(
+        package='my_robot_py_sim',
+        executable='pointcloud_restamper',
+        name='real_laser_pointcloud_restamper',
+        condition=IfCondition(use_scan_conversion),
+        parameters=[{
+            'use_sim_time': False,
+            'input_topic': laser_cloud_topic,
+            'output_topic': stamped_laser_cloud_topic,
+        }],
+        output='screen',
+    )
+
     pointcloud_to_scan = Node(
         package='pointcloud_to_laserscan',
         executable='pointcloud_to_laserscan_node',
@@ -141,7 +157,7 @@ def generate_launch_description():
             'inf_epsilon': 1.0,
         }],
         remappings=[
-            ('cloud_in', laser_cloud_topic),
+            ('cloud_in', stamped_laser_cloud_topic),
             ('scan', scan_topic),
         ],
         output='screen',
@@ -182,7 +198,7 @@ def generate_launch_description():
         arguments=['-d', rviz_config],
         parameters=[{'use_sim_time': False}],
         remappings=[
-            ('/lidar/points', '/vmr_base_bridge/laser/points'),
+            ('/lidar/points', stamped_laser_cloud_topic),
         ],
         output='screen',
     )
@@ -198,8 +214,13 @@ def generate_launch_description():
         DeclareLaunchArgument('map', default_value=default_map),
         DeclareLaunchArgument('pose_topic', default_value='/vmr_base_bridge/pose'),
         DeclareLaunchArgument('laser_cloud_topic', default_value='/vmr_base_bridge/laser/points'),
+        DeclareLaunchArgument(
+            'stamped_laser_cloud_topic',
+            default_value='/vmr_base_bridge/laser/points_stamped',
+        ),
         DeclareLaunchArgument('scan_topic', default_value='/scan'),
         DeclareLaunchArgument('cmd_vel_enabled', default_value='true'),
+        DeclareLaunchArgument('cmd_vel_topic', default_value='/cmd_vel'),
         DeclareLaunchArgument('cmd_vel_max_linear_x', default_value='0.3'),
         DeclareLaunchArgument('cmd_vel_max_linear_y', default_value='0.3'),
         DeclareLaunchArgument('cmd_vel_max_angular_z', default_value='1.0'),
@@ -210,6 +231,7 @@ def generate_launch_description():
         joint_state_publisher,
         robot_state_publisher,
         sdk_pose_to_map_tf,
+        pointcloud_restamper,
         pointcloud_to_scan,
         route_manager,
         TimerAction(period=2.0, actions=[

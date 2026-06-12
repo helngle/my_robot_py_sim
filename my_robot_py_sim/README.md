@@ -22,11 +22,13 @@ tools.
 The real-robot Nav2 configurations use:
 
 ```text
-Footprint:         0.70 m x 0.60 m
+Physical base:     0.70 m x 0.60 m
+Nav2 footprint:    0.80 m x 0.70 m
 Inflation radius:  0.45 m
 ```
 
-The footprint is used by both global and local costmaps. The URDF base model is
+The expanded footprint is used by both global and local costmaps to add a
+`0.05 m` hard safety margin on every side. The URDF base model is
 `0.70 m x 0.60 m x 0.35 m`, but standard Nav2 collision checking is 2D and
 does not use the base height.
 
@@ -85,10 +87,16 @@ ros2 launch my_robot_py_sim real_navigation_no_odom_mppi_with_rviz.launch.py
 The launch uses:
 
 - `/vmr_base_bridge/pose` as the global vehicle pose
-- `/vmr_base_bridge/laser/points` as the LiDAR source
+- `/vmr_base_bridge/laser/points` as the original SDK LiDAR source
+- `/vmr_base_bridge/laser/points_stamped` as the current-time LiDAR stream
 - `/scan` for the local obstacle layer
 - `/cmd_vel` for real-time chassis control
 - `config/real_nav2_no_odom_mppi.yaml` for Nav2
+
+The launch restamps the SDK point cloud with the current ROS time before
+projecting it to `/scan`. This keeps scan timestamps aligned with
+`map -> base_footprint` and prevents the local costmap from discarding scans
+that are older than its TF cache.
 
 The default saved map is:
 
@@ -112,6 +120,7 @@ Check the SDK topics:
 ```bash
 ros2 topic echo --once /vmr_base_bridge/pose
 ros2 topic hz /vmr_base_bridge/laser/points
+ros2 topic hz /vmr_base_bridge/laser/points_stamped
 ros2 topic hz /scan
 ```
 
@@ -134,8 +143,19 @@ ros2 param get /local_costmap/local_costmap inflation_layer.inflation_radius
 Expected footprint:
 
 ```text
-[[0.350, 0.300], [0.350, -0.300], [-0.350, -0.300], [-0.350, 0.300]]
+[[0.400, 0.350], [0.400, -0.350], [-0.400, -0.350], [-0.400, 0.350]]
 ```
+
+Check live-obstacle clearing:
+
+```bash
+ros2 param get /local_costmap/local_costmap obstacle_layer.scan.inf_is_valid
+ros2 param get /local_costmap/local_costmap \
+  obstacle_layer.scan.observation_persistence
+```
+
+The expected values are `true` and `0.0`, allowing empty scan rays to clear
+old obstacles without retaining previous observations.
 
 Observe whether MPPI is moving forward or laterally:
 
@@ -222,6 +242,8 @@ the edited route.
 - `config/nav2_navigation.yaml`: simulation Nav2 parameters
 - `config/slam_toolbox.yaml`: simulation SLAM parameters
 - `config/routes.yaml`: saved named routes
+- `my_robot_py_sim/pointcloud_restamper.py`: aligns SDK LiDAR timestamps with
+  the ROS TF clock
 - `urdf/mobile_manipulator.urdf`: RViz2/Gazebo robot model
 - `rviz/view_robot.rviz`: shared RViz2 display configuration
 

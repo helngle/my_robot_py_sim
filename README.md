@@ -18,7 +18,8 @@ The primary real-robot navigation path is:
 VMR SDK pose + LiDAR point cloud
         |
         v
-map -> base_footprint, /estimated_odom, /scan
+map -> base_footprint, /estimated_odom
+LiDAR restamp -> /scan
         |
         v
 Nav2 global planner + MPPI omni controller
@@ -27,7 +28,8 @@ Nav2 global planner + MPPI omni controller
 /cmd_vel -> vmr_base_bridge -> physical chassis
 ```
 
-The current Nav2 footprint is a `0.70 m x 0.60 m` rectangle. The MPPI
+The physical base is approximately `0.70 m x 0.60 m`. The current Nav2 hard
+collision footprint is an expanded `0.80 m x 0.70 m` rectangle. The MPPI
 configuration keeps omni-directional motion available, but strongly prefers
 aligning the vehicle front with the route and moving forward. Local and global
 costmaps use a `0.45 m` inflation radius.

@@ -93,6 +93,26 @@ The launch uses:
 - `/cmd_vel` for real-time chassis control
 - `config/real_nav2_no_odom_mppi.yaml` for Nav2
 
+Use the Livox MID360 source with:
+
+```bash
+ros2 launch my_robot_py_sim real_navigation_no_odom_mppi_with_rviz.launch.py \
+  lidar_source:=livox
+```
+
+Start the Orbbec Gemini 435Le camera in the same launch with:
+
+```bash
+ros2 launch my_robot_py_sim real_navigation_no_odom_mppi_with_rviz.launch.py \
+  lidar_source:=livox \
+  use_orbbec_camera:=true
+```
+
+The Orbbec camera defaults to `640x400 @ 10 FPS` for color and depth. Override
+the camera stream settings with `orbbec_color_width`, `orbbec_color_height`,
+`orbbec_color_fps`, `orbbec_depth_width`, `orbbec_depth_height`, and
+`orbbec_depth_fps`.
+
 The launch restamps the SDK point cloud with the current ROS time before
 projecting it to `/scan`. This keeps scan timestamps aligned with
 `map -> base_footprint` and prevents the local costmap from discarding scans

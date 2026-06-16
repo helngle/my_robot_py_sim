@@ -121,6 +121,18 @@ ros2 launch my_robot_py_sim real_navigation_no_odom_mppi_with_rviz.launch.py \
   lidar_source:=livox
 ```
 
+Real robot with Livox and the Orbbec Gemini 435Le camera:
+
+```bash
+ros2 launch my_robot_py_sim real_navigation_no_odom_mppi_with_rviz.launch.py \
+  lidar_source:=livox \
+  use_orbbec_camera:=true
+```
+
+The camera defaults to `640x400 @ 10 FPS`. Override color or depth resolution
+with launch arguments such as `orbbec_color_width:=1280`,
+`orbbec_color_height:=800`, and `orbbec_color_fps:=10`.
+
 Useful Livox checks:
 
 ```bash
@@ -149,6 +161,9 @@ recording, route editing, validation commands, and navigation details.
   LiDAR topics, accepts `/cmd_vel`, and exposes task-style motion services.
 - **livox_ros_driver2**: vendored ROS 2 driver for Livox MID360. The real
   navigation launch can start it and convert `/livox/lidar` to `/scan`.
+- **OrbbecSDK_ROS2**: vendored ROS 2 driver for the Orbbec Gemini 435Le depth
+  camera. The real navigation launch can start it, publish the camera TF, and
+  show color images plus RGB depth points in RViz2.
 - **pose_estimator**: optional experimental package for interpolating an
   external pose stream. It is not part of the primary real-navigation launch.
 

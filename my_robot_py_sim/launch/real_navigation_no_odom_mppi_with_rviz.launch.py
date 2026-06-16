@@ -16,6 +16,7 @@ def generate_launch_description():
     pkg_vmr_base = get_package_share_directory('vmr_base_bridge')
     pkg_nav2_bringup = get_package_share_directory('nav2_bringup')
     pkg_livox_driver = get_package_share_directory('livox_ros_driver2')
+    pkg_orbbec_camera = get_package_share_directory('orbbec_camera')
 
     urdf_file = os.path.join(pkg_my_robot, 'urdf', 'mobile_manipulator.urdf')
     rviz_config = os.path.join(pkg_my_robot, 'rviz', 'view_robot.rviz')
@@ -39,6 +40,13 @@ def generate_launch_description():
     cmd_vel_speed_factor = LaunchConfiguration('cmd_vel_speed_factor')
     use_scan_conversion = LaunchConfiguration('use_scan_conversion')
     use_nav2 = LaunchConfiguration('use_nav2')
+    use_orbbec_camera = LaunchConfiguration('use_orbbec_camera')
+    orbbec_color_width = LaunchConfiguration('orbbec_color_width')
+    orbbec_color_height = LaunchConfiguration('orbbec_color_height')
+    orbbec_color_fps = LaunchConfiguration('orbbec_color_fps')
+    orbbec_depth_width = LaunchConfiguration('orbbec_depth_width')
+    orbbec_depth_height = LaunchConfiguration('orbbec_depth_height')
+    orbbec_depth_fps = LaunchConfiguration('orbbec_depth_fps')
     nav2_delay = LaunchConfiguration('nav2_delay')
     map_file = LaunchConfiguration('map')
     lidar_source = LaunchConfiguration('lidar_source')
@@ -119,6 +127,37 @@ def generate_launch_description():
             '0.3', '0.0', '0.35',
             '0.0', '0.02', '0.0',
             'base_footprint', 'livox_frame',
+        ],
+        output='screen',
+    )
+
+    orbbec_camera = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(pkg_orbbec_camera, 'launch', 'gemini435_le.launch.py')
+        ),
+        condition=IfCondition(use_orbbec_camera),
+        launch_arguments={
+            'camera_name': 'camera',
+            'enable_point_cloud': 'true',
+            'enable_colored_point_cloud': 'true',
+            'color_width': orbbec_color_width,
+            'color_height': orbbec_color_height,
+            'color_fps': orbbec_color_fps,
+            'depth_width': orbbec_depth_width,
+            'depth_height': orbbec_depth_height,
+            'depth_fps': orbbec_depth_fps,
+        }.items(),
+    )
+
+    orbbec_static_tf = Node(
+        package='tf2_ros',
+        executable='static_transform_publisher',
+        name='orbbec_static_tf',
+        condition=IfCondition(use_orbbec_camera),
+        arguments=[
+            '0.25', '-0.10', '1.00',
+            '0.0', '0.0', '0.0',
+            'base_footprint', 'camera_link',
         ],
         output='screen',
     )
@@ -245,6 +284,7 @@ def generate_launch_description():
             'params_file': nav2_config,
             'use_composition': 'False',
             'use_respawn': 'False',
+            'log_level': 'info',
         }.items(),
     )
 
@@ -268,6 +308,17 @@ def generate_launch_description():
         DeclareLaunchArgument('use_joint_state_publisher', default_value='true'),
         DeclareLaunchArgument('use_scan_conversion', default_value='true'),
         DeclareLaunchArgument('use_nav2', default_value='true'),
+        DeclareLaunchArgument(
+            'use_orbbec_camera',
+            default_value='false',
+            description='Start the Orbbec Gemini 435Le camera and publish its base TF.',
+        ),
+        DeclareLaunchArgument('orbbec_color_width', default_value='640'),
+        DeclareLaunchArgument('orbbec_color_height', default_value='400'),
+        DeclareLaunchArgument('orbbec_color_fps', default_value='10'),
+        DeclareLaunchArgument('orbbec_depth_width', default_value='640'),
+        DeclareLaunchArgument('orbbec_depth_height', default_value='400'),
+        DeclareLaunchArgument('orbbec_depth_fps', default_value='10'),
         DeclareLaunchArgument('nav2_delay', default_value='8.0'),
         DeclareLaunchArgument('map', default_value=default_map),
         DeclareLaunchArgument(
@@ -295,6 +346,8 @@ def generate_launch_description():
         robot_state_publisher,
         livox_driver,
         livox_static_tf,
+        orbbec_camera,
+        orbbec_static_tf,
         sdk_pose_to_map_tf,
         pointcloud_restamper,
         pointcloud_to_scan,

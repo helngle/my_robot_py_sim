@@ -98,6 +98,35 @@ Visualization Manager:
       Color Transformer: AxisColor
       Axis: Z
       Use Fixed Frame: true
+    - Class: rviz_default_plugins/PointCloud2
+      Name: OrbbecRgbPoints
+      Enabled: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Best Effort
+        Value: /camera/depth_registered/points
+      Queue Size: 10
+      Selectable: true
+      Style: Points
+      Size (Pixels): 2
+      Alpha: 1
+      Color Transformer: RGB8
+      Use Fixed Frame: true
+    - Class: rviz_default_plugins/Image
+      Name: OrbbecColorImage
+      Enabled: true
+      Max Value: 1
+      Median window: 5
+      Min Value: 0
+      Normalize Range: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /camera/color/image_raw
     - Class: rviz_default_plugins/LaserScan
       Name: ProjectedScan
       Enabled: true

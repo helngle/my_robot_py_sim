@@ -11,3 +11,6 @@ log/
 
 *.gv
 *.pdf
+
+# Local system SDK source used to install Livox-SDK2 into /usr/local.
+Livox-SDK2/

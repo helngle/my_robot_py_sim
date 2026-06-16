@@ -5,7 +5,7 @@ from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, SetEnvironmentVariable, TimerAction
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 
 NAMESPACE = 'mobile_manipulator'
@@ -15,11 +15,13 @@ def generate_launch_description():
     pkg_my_robot = get_package_share_directory('my_robot_py_sim')
     pkg_vmr_base = get_package_share_directory('vmr_base_bridge')
     pkg_nav2_bringup = get_package_share_directory('nav2_bringup')
+    pkg_livox_driver = get_package_share_directory('livox_ros_driver2')
 
     urdf_file = os.path.join(pkg_my_robot, 'urdf', 'mobile_manipulator.urdf')
     rviz_config = os.path.join(pkg_my_robot, 'rviz', 'view_robot.rviz')
     nav2_config = os.path.join(pkg_my_robot, 'config', 'real_nav2_no_odom_mppi.yaml')
     routes_file = os.path.join(pkg_my_robot, 'config', 'routes.yaml')
+    livox_config = os.path.join(pkg_livox_driver, 'config', 'MID360s_config.json')
     default_map = os.path.expanduser('~/ros2_ws/maps/Test052601/Test052601.yaml')
 
     with open(urdf_file, 'r') as f:
@@ -39,10 +41,19 @@ def generate_launch_description():
     use_nav2 = LaunchConfiguration('use_nav2')
     nav2_delay = LaunchConfiguration('nav2_delay')
     map_file = LaunchConfiguration('map')
+    lidar_source = LaunchConfiguration('lidar_source')
     pose_topic = LaunchConfiguration('pose_topic')
     laser_cloud_topic = LaunchConfiguration('laser_cloud_topic')
     stamped_laser_cloud_topic = LaunchConfiguration('stamped_laser_cloud_topic')
     scan_topic = LaunchConfiguration('scan_topic')
+    use_livox_lidar = PythonExpression(["'", lidar_source, "' == 'livox'"])
+    selected_laser_cloud_topic = PythonExpression([
+        "'/livox/lidar' if '",
+        lidar_source,
+        "' == 'livox' else '",
+        laser_cloud_topic,
+        "'",
+    ])
 
     base_driver = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -78,6 +89,38 @@ def generate_launch_description():
             'robot_description': robot_desc,
             'use_sim_time': False,
         }],
+    )
+
+    livox_driver = Node(
+        package='livox_ros_driver2',
+        executable='livox_ros_driver2_node',
+        name='livox_lidar_publisher',
+        condition=IfCondition(use_livox_lidar),
+        output='screen',
+        parameters=[{
+            'xfer_format': 0,
+            'multi_topic': 0,
+            'data_src': 0,
+            'publish_freq': 10.0,
+            'output_data_type': 0,
+            'frame_id': 'livox_frame',
+            'lvx_file_path': '/home/livox/livox_test.lvx',
+            'user_config_path': livox_config,
+            'cmdline_input_bd_code': 'livox0000000001',
+        }],
+    )
+
+    livox_static_tf = Node(
+        package='tf2_ros',
+        executable='static_transform_publisher',
+        name='livox_static_tf',
+        condition=IfCondition(use_livox_lidar),
+        arguments=[
+            '0.3', '0.0', '0.35',
+            '0.0', '0.02', '0.0',
+            'base_footprint', 'livox_frame',
+        ],
+        output='screen',
     )
 
     sdk_pose_to_map_tf = Node(
@@ -130,7 +173,7 @@ def generate_launch_description():
         condition=IfCondition(use_scan_conversion),
         parameters=[{
             'use_sim_time': False,
-            'input_topic': laser_cloud_topic,
+            'input_topic': selected_laser_cloud_topic,
             'output_topic': stamped_laser_cloud_topic,
         }],
         output='screen',
@@ -227,11 +270,16 @@ def generate_launch_description():
         DeclareLaunchArgument('use_nav2', default_value='true'),
         DeclareLaunchArgument('nav2_delay', default_value='8.0'),
         DeclareLaunchArgument('map', default_value=default_map),
+        DeclareLaunchArgument(
+            'lidar_source',
+            default_value='vmr',
+            description='Point cloud source for /scan conversion: vmr or livox.',
+        ),
         DeclareLaunchArgument('pose_topic', default_value='/vmr_base_bridge/pose'),
         DeclareLaunchArgument('laser_cloud_topic', default_value='/vmr_base_bridge/laser/points'),
         DeclareLaunchArgument(
             'stamped_laser_cloud_topic',
-            default_value='/vmr_base_bridge/laser/points_stamped',
+            default_value='/selected_lidar/points_stamped',
         ),
         DeclareLaunchArgument('scan_topic', default_value='/scan'),
         DeclareLaunchArgument('cmd_vel_enabled', default_value='true'),
@@ -245,6 +293,8 @@ def generate_launch_description():
         base_driver,
         joint_state_publisher,
         robot_state_publisher,
+        livox_driver,
+        livox_static_tf,
         sdk_pose_to_map_tf,
         pointcloud_restamper,
         pointcloud_to_scan,

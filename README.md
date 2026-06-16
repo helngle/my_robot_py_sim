@@ -9,17 +9,18 @@ navigation, route tools, and the VMR chassis SDK bridge.
 src/
 |-- my_robot_py_sim/   # Gazebo/RViz2, Nav2, robot model, and route tools
 |-- vmr_base_bridge/   # ROS 2 bridge for the VMR chassis SDK
+|-- livox_ros_driver2/ # ROS 2 driver for the Livox MID360 LiDAR
 `-- pose_estimator/    # Optional pose interpolation experiments
 ```
 
 The primary real-robot navigation path is:
 
 ```text
-VMR SDK pose + LiDAR point cloud
+VMR SDK pose + VMR or Livox LiDAR point cloud
         |
         v
 map -> base_footprint, /estimated_odom
-LiDAR restamp -> /scan
+PointCloud2 restamp -> /scan
         |
         v
 Nav2 global planner + MPPI omni controller
@@ -34,6 +35,20 @@ configuration keeps omni-directional motion available, but strongly prefers
 aligning the vehicle front with the route and moving forward. Local and global
 costmaps use a `0.45 m` inflation radius.
 
+The default real launch still uses the VMR SDK LiDAR. Pass
+`lidar_source:=livox` to use the Livox MID360 instead. Livox points are
+converted to a 2D `/scan` for Nav2 using a filtered height band:
+
+```text
+min_height: 0.10 m
+max_height: 1.00 m
+range_min: 0.45 m
+range_max: 20.0 m
+```
+
+This filters floor returns and near-field self hits before projecting the 3D
+point cloud into the 2D costmaps.
+
 ## Build
 
 ROS 2 Humble uses Python 3.10. If Anaconda is active, force the system Python
@@ -44,6 +59,31 @@ cd ~/ros2_ws
 source /opt/ros/humble/setup.bash
 PATH=/usr/bin:/bin:$PATH colcon build --symlink-install \
   --cmake-args -DPython3_EXECUTABLE=/usr/bin/python3
+source install/setup.bash
+```
+
+The Livox ROS driver depends on Livox-SDK2 installed into `/usr/local`.
+`Livox-SDK2/` is intentionally ignored by Git because it is only used as local
+SDK source. Install it once before building `livox_ros_driver2`:
+
+```bash
+cd ~/ros2_ws/src
+git clone https://github.com/Livox-SDK/Livox-SDK2.git
+cd Livox-SDK2
+mkdir -p build && cd build
+cmake ..
+make -j$(nproc)
+sudo make install
+sudo ldconfig
+```
+
+If you only need to build the Livox ROS driver and do not need lint checks:
+
+```bash
+cd ~/ros2_ws
+source /opt/ros/humble/setup.bash
+PATH=/usr/bin:/bin:$PATH colcon build --packages-select livox_ros_driver2 \
+  --cmake-args -DPython3_EXECUTABLE=/usr/bin/python3 -DBUILD_TESTING=OFF
 source install/setup.bash
 ```
 
@@ -68,6 +108,28 @@ export ROS_LOCALHOST_ONLY=0
 ros2 launch my_robot_py_sim real_navigation_no_odom_mppi_with_rviz.launch.py
 ```
 
+Real robot using Livox MID360 for obstacle sensing:
+
+```bash
+cd ~/ros2_ws
+source /opt/ros/humble/setup.bash
+source install/setup.bash
+export ROS_DOMAIN_ID=23
+export ROS_LOCALHOST_ONLY=0
+
+ros2 launch my_robot_py_sim real_navigation_no_odom_mppi_with_rviz.launch.py \
+  lidar_source:=livox
+```
+
+Useful Livox checks:
+
+```bash
+ros2 topic info /livox/lidar
+ros2 topic hz /livox/lidar
+ros2 topic hz /scan
+ros2 run tf2_ros tf2_echo base_footprint livox_frame
+```
+
 The real launch expects the vehicle network and a saved map. Its default map is
 `~/ros2_ws/maps/Test052601/Test052601.yaml`; override it with:
 
@@ -85,6 +147,8 @@ recording, route editing, validation commands, and navigation details.
   parameters, map/scan integration, route recording, and route execution.
 - **vmr_base_bridge**: wraps the vendor VMR SDK, publishes chassis state and
   LiDAR topics, accepts `/cmd_vel`, and exposes task-style motion services.
+- **livox_ros_driver2**: vendored ROS 2 driver for Livox MID360. The real
+  navigation launch can start it and convert `/livox/lidar` to `/scan`.
 - **pose_estimator**: optional experimental package for interpolating an
   external pose stream. It is not part of the primary real-navigation launch.
 

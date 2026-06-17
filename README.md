@@ -7,10 +7,15 @@ navigation, route tools, and the VMR chassis SDK bridge.
 
 ```text
 src/
-|-- my_robot_py_sim/   # Gazebo/RViz2, Nav2, robot model, and route tools
-|-- vmr_base_bridge/   # ROS 2 bridge for the VMR chassis SDK
-|-- livox_ros_driver2/ # ROS 2 driver for the Livox MID360 LiDAR
-`-- pose_estimator/    # Optional pose interpolation experiments
+|-- my_robot_bringup/     # Main launch entry points
+|-- my_robot_description/ # URDF, RViz2, and simulation assets
+|-- my_robot_maps/        # Versioned map assets
+|-- my_robot_navigation/  # Nav2, route, and safety configuration
+|-- my_robot_py_sim/      # Navigation helper nodes and legacy launch files
+|-- vmr_base_bridge/      # ROS 2 bridge for the VMR chassis SDK
+|-- livox_ros_driver2/    # ROS 2 driver for the Livox MID360 LiDAR
+|-- OrbbecSDK_ROS2/       # ROS 2 driver for the Orbbec Gemini 435Le camera
+`-- pose_estimator/       # Optional pose interpolation experiments
 ```
 
 The primary real-robot navigation path is:
@@ -108,6 +113,12 @@ export ROS_LOCALHOST_ONLY=0
 ros2 launch my_robot_py_sim real_navigation_no_odom_mppi_with_rviz.launch.py
 ```
 
+The refactored bringup entry point is:
+
+```bash
+ros2 launch my_robot_bringup real_navigation_mppi.launch.py
+```
+
 Real robot using Livox MID360 for obstacle sensing:
 
 ```bash
@@ -121,10 +132,25 @@ ros2 launch my_robot_py_sim real_navigation_no_odom_mppi_with_rviz.launch.py \
   lidar_source:=livox
 ```
 
+Or with the refactored bringup package:
+
+```bash
+ros2 launch my_robot_bringup real_navigation_mppi.launch.py \
+  lidar_source:=livox
+```
+
 Real robot with Livox and the Orbbec Gemini 435Le camera:
 
 ```bash
 ros2 launch my_robot_py_sim real_navigation_no_odom_mppi_with_rviz.launch.py \
+  lidar_source:=livox \
+  use_orbbec_camera:=true
+```
+
+Or with the refactored bringup package:
+
+```bash
+ros2 launch my_robot_bringup real_navigation_mppi.launch.py \
   lidar_source:=livox \
   use_orbbec_camera:=true
 ```

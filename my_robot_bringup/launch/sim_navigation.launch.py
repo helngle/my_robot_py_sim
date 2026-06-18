@@ -161,7 +161,7 @@ def generate_launch_description():
     )
 
     odom_to_tf = Node(
-        package='my_robot_py_sim',
+        package='my_robot_localization',
         executable='odom_to_tf',
         name='odom_to_tf',
         parameters=[{
@@ -174,7 +174,7 @@ def generate_launch_description():
     )
 
     safety_shell = Node(
-        package='my_robot_py_sim',
+        package='my_robot_tools',
         executable='safety_shell_marker',
         name='safety_shell_marker',
         parameters=[{
@@ -188,7 +188,7 @@ def generate_launch_description():
     )
 
     footprint_marker = Node(
-        package='my_robot_py_sim',
+        package='my_robot_tools',
         executable='footprint_marker',
         name='footprint_marker',
         parameters=[{

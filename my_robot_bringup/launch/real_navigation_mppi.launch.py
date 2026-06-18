@@ -165,7 +165,7 @@ def generate_launch_description():
     )
 
     sdk_pose_to_map_tf = Node(
-        package='my_robot_py_sim',
+        package='my_robot_localization',
         executable='sdk_pose_to_map_tf',
         name='sdk_pose_to_map_tf',
         output='screen',
@@ -208,7 +208,7 @@ def generate_launch_description():
     )
 
     pointcloud_restamper = Node(
-        package='my_robot_py_sim',
+        package='my_robot_perception',
         executable='pointcloud_restamper',
         name='real_laser_pointcloud_restamper',
         condition=IfCondition(use_scan_conversion),
@@ -248,7 +248,7 @@ def generate_launch_description():
     )
 
     route_manager = Node(
-        package='my_robot_py_sim',
+        package='my_robot_tools',
         executable='route_manager',
         name='route_manager',
         parameters=[{
@@ -261,7 +261,7 @@ def generate_launch_description():
     )
 
     footprint_marker = Node(
-        package='my_robot_py_sim',
+        package='my_robot_tools',
         executable='footprint_marker',
         name='footprint_marker',
         parameters=[{

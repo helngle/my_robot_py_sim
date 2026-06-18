@@ -89,18 +89,28 @@ controller_server:
       yaw_goal_tolerance: 0.35
 
     FollowPath:
-      plugin: nav2_mppi_controller::MPPIController
+      plugin: nav2_rotation_shim_controller::RotationShimController
+      primary_controller: nav2_mppi_controller::MPPIController
+      angular_dist_threshold: 0.65
+      angular_disengage_threshold: 0.30
+      forward_sampling_distance: 0.5
+      rotate_to_heading_angular_vel: 0.42
+      max_angular_accel: 1.2
+      simulate_ahead_time: 1.0
+      rotate_to_goal_heading: false
+      closed_loop: true
+
       time_steps: 24
       model_dt: 0.125
       batch_size: 1200
       iteration_count: 1
       vx_std: 0.18
       vy_std: 0.06
-      wz_std: 0.22
+      wz_std: 0.26
       vx_max: 0.24
       vx_min: -0.20
       vy_max: 0.09
-      wz_max: 0.32
+      wz_max: 0.38
       motion_model: "Omni"
       prune_distance: 1.5
       transform_tolerance: 1.0
@@ -153,7 +163,7 @@ controller_server:
       PathAngleCritic:
         enabled: true
         cost_power: 1
-        cost_weight: 32.0
+        cost_weight: 36.0
         offset_from_furthest: 4
         threshold_to_consider: 0.5
         max_angle_to_furthest: 0.35
@@ -162,7 +172,7 @@ controller_server:
         enabled: true
         cost_power: 1
         cost_weight: 5.0
-        threshold_to_consider: 0.9
+        threshold_to_consider: 1.0
       TwirlingCritic:
         enabled: false
         cost_power: 1

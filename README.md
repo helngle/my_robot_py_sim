@@ -71,11 +71,12 @@ source install/setup.bash
 ```
 
 The Livox ROS driver depends on Livox-SDK2 installed into `/usr/local`.
-`Livox-SDK2/` is intentionally ignored by Git because it is only used as local
-SDK source. Install it once before building `livox_ros_driver2`:
+The SDK source is kept outside the ROS 2 workspace under `~/vendor` because it
+is not a ROS package. Install it once before building `livox_ros_driver2`:
 
 ```bash
-cd ~/ros2_ws/src
+mkdir -p ~/vendor
+cd ~/vendor
 git clone https://github.com/Livox-SDK/Livox-SDK2.git
 cd Livox-SDK2
 mkdir -p build && cd build

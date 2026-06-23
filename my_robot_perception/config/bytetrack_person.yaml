@@ -1,0 +1,25 @@
+# ByteTrack tracker parameters used by Ultralytics YOLO mode="track".
+# This file is copied into the project so the real robot tracking behavior can
+# be tuned without editing the Python package installed under site-packages.
+
+tracker_type: bytetrack
+
+# First-stage matching threshold. Higher values make tracks cleaner but can
+# drop weak/far detections more easily.
+track_high_thresh: 0.30
+
+# Second-stage matching threshold for low-confidence detections. Lower values
+# help recover partially missed detections but may increase drift.
+track_low_thresh: 0.12
+
+# Confidence threshold for starting a brand-new track.
+new_track_thresh: 0.35
+
+# Number of frames to keep a lost track alive.
+track_buffer: 40
+
+# Matching threshold for associating detections to existing tracks.
+match_thresh: 0.85
+
+# Fuse detection confidence into matching.
+fuse_score: true

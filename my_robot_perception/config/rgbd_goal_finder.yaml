@@ -1,0 +1,10 @@
+rgbd_goal_finder:
+  ros__parameters:
+    follow_enabled: false
+    follow_rate_hz: 0.3
+    follow_min_goal_delta_m: 0.55
+    follow_target_timeout_s: 3.0
+
+    approach_distance_m: 0.8
+    lock_yolo_target: true
+    lock_lost_frames: 15

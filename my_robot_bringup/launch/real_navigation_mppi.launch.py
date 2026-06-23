@@ -7,6 +7,7 @@ from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 
 NAMESPACE = 'mobile_manipulator'
 
@@ -16,6 +17,7 @@ def generate_launch_description():
     pkg_navigation = get_package_share_directory('my_robot_navigation')
     pkg_maps = get_package_share_directory('my_robot_maps')
     pkg_vmr_base = get_package_share_directory('vmr_base_bridge')
+    pkg_perception = get_package_share_directory('my_robot_perception')
     pkg_nav2_bringup = get_package_share_directory('nav2_bringup')
     pkg_livox_driver = get_package_share_directory('livox_ros_driver2')
     pkg_orbbec_camera = get_package_share_directory('orbbec_camera')
@@ -23,9 +25,20 @@ def generate_launch_description():
     urdf_file = os.path.join(pkg_description, 'urdf', 'mobile_manipulator.urdf')
     rviz_config = os.path.join(pkg_description, 'rviz', 'view_robot.rviz')
     nav2_config = os.path.join(pkg_navigation, 'config', 'real_nav2_no_odom_mppi.yaml')
+    default_nav2_params = nav2_config
     routes_file = os.path.join(pkg_navigation, 'config', 'routes.yaml')
     livox_config = os.path.join(pkg_livox_driver, 'config', 'MID360s_config.json')
     default_map = os.path.join(pkg_maps, 'maps', 'Test052601', 'Test052601.yaml')
+    default_rgbd_params = os.path.join(
+        pkg_perception,
+        'config',
+        'rgbd_goal_finder.yaml',
+    )
+    default_rgbd_tracker = os.path.join(
+        pkg_perception,
+        'config',
+        'bytetrack_person.yaml',
+    )
 
     with open(urdf_file, 'r') as f:
         robot_desc = f.read()
@@ -43,6 +56,18 @@ def generate_launch_description():
     use_scan_conversion = LaunchConfiguration('use_scan_conversion')
     use_nav2 = LaunchConfiguration('use_nav2')
     use_orbbec_camera = LaunchConfiguration('use_orbbec_camera')
+    use_orbbec_pointcloud = LaunchConfiguration('use_orbbec_pointcloud')
+    use_rgbd_goal = LaunchConfiguration('use_rgbd_goal')
+    rgbd_goal_auto_send = LaunchConfiguration('rgbd_goal_auto_send')
+    rgbd_target_detector = LaunchConfiguration('rgbd_target_detector')
+    rgbd_target_class = LaunchConfiguration('rgbd_target_class')
+    rgbd_yolo_model = LaunchConfiguration('rgbd_yolo_model')
+    rgbd_yolo_device = LaunchConfiguration('rgbd_yolo_device')
+    rgbd_yolo_confidence = LaunchConfiguration('rgbd_yolo_confidence')
+    rgbd_process_rate_hz = LaunchConfiguration('rgbd_process_rate_hz')
+    rgbd_use_tracking = LaunchConfiguration('rgbd_use_tracking')
+    rgbd_yolo_tracker = LaunchConfiguration('rgbd_yolo_tracker')
+    rgbd_params_file = LaunchConfiguration('rgbd_params_file')
     orbbec_color_width = LaunchConfiguration('orbbec_color_width')
     orbbec_color_height = LaunchConfiguration('orbbec_color_height')
     orbbec_color_fps = LaunchConfiguration('orbbec_color_fps')
@@ -50,6 +75,7 @@ def generate_launch_description():
     orbbec_depth_height = LaunchConfiguration('orbbec_depth_height')
     orbbec_depth_fps = LaunchConfiguration('orbbec_depth_fps')
     nav2_delay = LaunchConfiguration('nav2_delay')
+    nav2_params_file = LaunchConfiguration('nav2_params_file')
     map_file = LaunchConfiguration('map')
     lidar_source = LaunchConfiguration('lidar_source')
     pose_topic = LaunchConfiguration('pose_topic')
@@ -140,8 +166,8 @@ def generate_launch_description():
         condition=IfCondition(use_orbbec_camera),
         launch_arguments={
             'camera_name': 'camera',
-            'enable_point_cloud': 'true',
-            'enable_colored_point_cloud': 'true',
+            'enable_point_cloud': use_orbbec_pointcloud,
+            'enable_colored_point_cloud': use_orbbec_pointcloud,
             'color_width': orbbec_color_width,
             'color_height': orbbec_color_height,
             'color_fps': orbbec_color_fps,
@@ -161,6 +187,47 @@ def generate_launch_description():
             '0.0', '0.0', '0.0',
             'base_footprint', 'camera_link',
         ],
+        output='screen',
+    )
+
+    rgbd_goal_finder = Node(
+        package='my_robot_perception',
+        executable='rgbd_goal_finder',
+        name='rgbd_goal_finder',
+        condition=IfCondition(use_rgbd_goal),
+        parameters=[rgbd_params_file, {
+            'use_sim_time': False,
+            'color_topic': '/camera/color/image_raw',
+            'depth_topic': '/camera/depth/image_raw',
+            'camera_info_topic': '/camera/color/camera_info',
+            'target_frame': 'map',
+            'base_frame': 'base_footprint',
+            'target_detector': rgbd_target_detector,
+            'target_class': rgbd_target_class,
+            'target_color': 'white',
+            'yolo_model': rgbd_yolo_model,
+            'yolo_device': rgbd_yolo_device,
+            'yolo_confidence': ParameterValue(
+                rgbd_yolo_confidence,
+                value_type=float,
+            ),
+            'process_rate_hz': ParameterValue(
+                rgbd_process_rate_hz,
+                value_type=float,
+            ),
+            'use_yolo_tracking': ParameterValue(
+                rgbd_use_tracking,
+                value_type=bool,
+            ),
+            'yolo_tracker': rgbd_yolo_tracker,
+            'lock_yolo_target': True,
+            'lock_lost_frames': 15,
+            'approach_distance_m': 0.8,
+            'auto_send_goal': ParameterValue(
+                rgbd_goal_auto_send,
+                value_type=bool,
+            ),
+        }],
         output='screen',
     )
 
@@ -283,7 +350,7 @@ def generate_launch_description():
         launch_arguments={
             'use_sim_time': 'false',
             'autostart': 'true',
-            'params_file': nav2_config,
+            'params_file': nav2_params_file,
             'use_composition': 'False',
             'use_respawn': 'False',
             'log_level': 'info',
@@ -315,6 +382,27 @@ def generate_launch_description():
             default_value='false',
             description='Start the Orbbec Gemini 435Le camera and publish its base TF.',
         ),
+        DeclareLaunchArgument('use_orbbec_pointcloud', default_value='false'),
+        DeclareLaunchArgument('use_rgbd_goal', default_value='false'),
+        DeclareLaunchArgument('rgbd_goal_auto_send', default_value='false'),
+        DeclareLaunchArgument('rgbd_target_detector', default_value='yolo'),
+        DeclareLaunchArgument('rgbd_target_class', default_value='person'),
+        DeclareLaunchArgument(
+            'rgbd_yolo_model',
+            default_value='/home/jensen/ros2_ws/yolo11n.pt',
+        ),
+        DeclareLaunchArgument('rgbd_yolo_device', default_value='cuda:0'),
+        DeclareLaunchArgument('rgbd_yolo_confidence', default_value='0.10'),
+        DeclareLaunchArgument('rgbd_process_rate_hz', default_value='8.0'),
+        DeclareLaunchArgument('rgbd_use_tracking', default_value='true'),
+        DeclareLaunchArgument(
+            'rgbd_yolo_tracker',
+            default_value=default_rgbd_tracker,
+        ),
+        DeclareLaunchArgument(
+            'rgbd_params_file',
+            default_value=default_rgbd_params,
+        ),
         DeclareLaunchArgument('orbbec_color_width', default_value='640'),
         DeclareLaunchArgument('orbbec_color_height', default_value='400'),
         DeclareLaunchArgument('orbbec_color_fps', default_value='10'),
@@ -322,6 +410,10 @@ def generate_launch_description():
         DeclareLaunchArgument('orbbec_depth_height', default_value='400'),
         DeclareLaunchArgument('orbbec_depth_fps', default_value='10'),
         DeclareLaunchArgument('nav2_delay', default_value='8.0'),
+        DeclareLaunchArgument(
+            'nav2_params_file',
+            default_value=default_nav2_params,
+        ),
         DeclareLaunchArgument('map', default_value=default_map),
         DeclareLaunchArgument(
             'lidar_source',
@@ -350,6 +442,7 @@ def generate_launch_description():
         livox_static_tf,
         orbbec_camera,
         orbbec_static_tf,
+        rgbd_goal_finder,
         sdk_pose_to_map_tf,
         pointcloud_restamper,
         pointcloud_to_scan,

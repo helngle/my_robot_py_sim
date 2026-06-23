@@ -1,0 +1,17 @@
+# Full mobile-manipulator radius for Navigation2 costmaps.
+#
+# This radius includes the currently fixed open arm pose. Obstacles still enter
+# Nav2 as normal 2D map / laser-scan costs; the larger robot radius makes Nav2
+# reject corridors that the unfolded manipulator body cannot fit through.
+#
+# Coordinates are in base_footprint:
+#   +x forward, +y left.
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      robot_radius: 0.93
+
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      robot_radius: 0.93

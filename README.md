@@ -7,10 +7,18 @@ navigation, route tools, and the VMR chassis SDK bridge.
 
 ```text
 src/
-|-- my_robot_py_sim/   # Gazebo/RViz2, Nav2, robot model, and route tools
-|-- vmr_base_bridge/   # ROS 2 bridge for the VMR chassis SDK
-|-- livox_ros_driver2/ # ROS 2 driver for the Livox MID360 LiDAR
-`-- pose_estimator/    # Optional pose interpolation experiments
+|-- my_robot_bringup/     # Main launch entry points
+|-- my_robot_description/ # URDF, RViz2, and simulation assets
+|-- my_robot_maps/        # Versioned map assets
+|-- my_robot_navigation/  # Nav2, route, and safety configuration
+|-- my_robot_localization/ # Pose, odometry, and TF helper nodes
+|-- my_robot_perception/  # Point cloud and planning-map helper nodes
+|-- my_robot_tools/       # Route, marker, and operator helper tools
+|-- vmr_base_bridge/      # ROS 2 bridge for the VMR chassis SDK
+|-- livox_ros_driver2/    # ROS 2 driver for the Livox MID360 LiDAR
+|-- OrbbecSDK_ROS2/       # ROS 2 driver for the Orbbec Gemini 435Le camera
+|-- legacy/               # Ignored legacy package snapshots
+`-- pose_estimator/       # Optional pose interpolation experiments
 ```
 
 The primary real-robot navigation path is:
@@ -63,11 +71,12 @@ source install/setup.bash
 ```
 
 The Livox ROS driver depends on Livox-SDK2 installed into `/usr/local`.
-`Livox-SDK2/` is intentionally ignored by Git because it is only used as local
-SDK source. Install it once before building `livox_ros_driver2`:
+The SDK source is kept outside the ROS 2 workspace under `~/vendor` because it
+is not a ROS package. Install it once before building `livox_ros_driver2`:
 
 ```bash
-cd ~/ros2_ws/src
+mkdir -p ~/vendor
+cd ~/vendor
 git clone https://github.com/Livox-SDK/Livox-SDK2.git
 cd Livox-SDK2
 mkdir -p build && cd build
@@ -94,7 +103,7 @@ Simulation with Gazebo, SLAM, and RViz2:
 ```bash
 cd ~/ros2_ws
 source install/setup.bash
-ros2 launch my_robot_py_sim sim_with_rviz.launch.py
+ros2 launch my_robot_bringup sim_navigation.launch.py
 ```
 
 Real robot with the MPPI omni controller:
@@ -105,7 +114,7 @@ source install/setup.bash
 export ROS_DOMAIN_ID=23
 export ROS_LOCALHOST_ONLY=0
 
-ros2 launch my_robot_py_sim real_navigation_no_odom_mppi_with_rviz.launch.py
+ros2 launch my_robot_bringup real_navigation_mppi.launch.py
 ```
 
 Real robot using Livox MID360 for obstacle sensing:
@@ -117,14 +126,14 @@ source install/setup.bash
 export ROS_DOMAIN_ID=23
 export ROS_LOCALHOST_ONLY=0
 
-ros2 launch my_robot_py_sim real_navigation_no_odom_mppi_with_rviz.launch.py \
+ros2 launch my_robot_bringup real_navigation_mppi.launch.py \
   lidar_source:=livox
 ```
 
 Real robot with Livox and the Orbbec Gemini 435Le camera:
 
 ```bash
-ros2 launch my_robot_py_sim real_navigation_no_odom_mppi_with_rviz.launch.py \
+ros2 launch my_robot_bringup real_navigation_mppi.launch.py \
   lidar_source:=livox \
   use_orbbec_camera:=true
 ```
@@ -143,20 +152,25 @@ ros2 run tf2_ros tf2_echo base_footprint livox_frame
 ```
 
 The real launch expects the vehicle network and a saved map. Its default map is
-`~/ros2_ws/maps/Test052601/Test052601.yaml`; override it with:
+provided by `my_robot_maps`; override it with:
 
 ```bash
-ros2 launch my_robot_py_sim real_navigation_no_odom_mppi_with_rviz.launch.py \
+ros2 launch my_robot_bringup real_navigation_mppi.launch.py \
   map:=/absolute/path/to/map.yaml
 ```
 
-See [`my_robot_py_sim/README.md`](my_robot_py_sim/README.md) for route
-recording, route editing, validation commands, and navigation details.
+Legacy launch files and pre-split helper nodes are kept under
+[`legacy/my_robot_py_sim`](legacy/my_robot_py_sim) for reference.
 
 ## Packages
 
-- **my_robot_py_sim**: robot URDF, Gazebo world, RViz2 configuration, Nav2
-  parameters, map/scan integration, route recording, and route execution.
+- **my_robot_bringup**: main real and simulation launch entry points.
+- **my_robot_description**: robot URDF, RViz2 configuration, and simulation world.
+- **my_robot_maps**: versioned map assets used by Nav2 map server.
+- **my_robot_navigation**: Nav2, route, and safety configuration.
+- **my_robot_localization**: pose, odometry, and TF helper nodes.
+- **my_robot_perception**: point cloud, occupancy grid, and planning-map helper nodes.
+- **my_robot_tools**: route, marker, and operator helper tools.
 - **vmr_base_bridge**: wraps the vendor VMR SDK, publishes chassis state and
   LiDAR topics, accepts `/cmd_vel`, and exposes task-style motion services.
 - **livox_ros_driver2**: vendored ROS 2 driver for Livox MID360. The real

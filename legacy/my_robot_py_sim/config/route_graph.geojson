@@ -1,0 +1,11 @@
+{
+  "type": "FeatureCollection",
+  "name": "mobile_manipulator_recorded_routes",
+  "crs": {
+    "type": "name",
+    "properties": {
+      "name": "urn:ogc:def:crs:EPSG::3857"
+    }
+  },
+  "features": []
+}

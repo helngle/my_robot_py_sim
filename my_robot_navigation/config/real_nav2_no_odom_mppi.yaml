@@ -86,7 +86,7 @@ controller_server:
       plugin: nav2_controller::SimpleGoalChecker
       stateful: true
       xy_goal_tolerance: 0.20
-      yaw_goal_tolerance: 0.35
+      yaw_goal_tolerance: 0.10
 
     FollowPath:
       plugin: nav2_rotation_shim_controller::RotationShimController
@@ -97,7 +97,7 @@ controller_server:
       rotate_to_heading_angular_vel: 0.48
       max_angular_accel: 1.2
       simulate_ahead_time: 1.0
-      rotate_to_goal_heading: false
+      rotate_to_goal_heading: true
       closed_loop: true
 
       time_steps: 24
@@ -163,7 +163,7 @@ controller_server:
       PathAngleCritic:
         enabled: true
         cost_power: 1
-        cost_weight: 38.0
+        cost_weight: 47.0
         offset_from_furthest: 4
         threshold_to_consider: 0.5
         max_angle_to_furthest: 0.35

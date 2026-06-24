@@ -2,6 +2,7 @@ import math
 from copy import deepcopy
 
 import cv2
+from message_filters import ApproximateTimeSynchronizer, Subscriber
 import numpy as np
 import rclpy
 from cv_bridge import CvBridge, CvBridgeError
@@ -53,6 +54,8 @@ class RgbdGoalFinder(Node):
         self.declare_parameter('yolo_imgsz', 640)
         self.declare_parameter('use_yolo_tracking', True)
         self.declare_parameter('yolo_tracker', 'bytetrack.yaml')
+        self.declare_parameter('yolo_observation_classes', ['*'])
+        self.declare_parameter('yolo_observation_confidence', 0.25)
         self.declare_parameter('lock_yolo_target', True)
         self.declare_parameter('lock_lost_frames', 15)
         self.declare_parameter('min_depth_m', 0.25)
@@ -64,7 +67,10 @@ class RgbdGoalFinder(Node):
         self.declare_parameter('approach_distance_m', 0.8)
         self.declare_parameter('goal_z', 0.0)
         self.declare_parameter('process_rate_hz', 8.0)
+        self.declare_parameter('sync_queue_size', 10)
+        self.declare_parameter('sync_slop_s', 0.08)
         self.declare_parameter('publish_debug_image', True)
+        self.declare_parameter('enable_target_localization', True)
         self.declare_parameter('auto_send_goal', False)
         self.declare_parameter('auto_send_cooldown_s', 10.0)
         self.declare_parameter('follow_enabled', False)
@@ -90,6 +96,15 @@ class RgbdGoalFinder(Node):
             self.get_parameter('use_yolo_tracking').value
         )
         self.yolo_tracker = self.get_parameter('yolo_tracker').value
+        self.yolo_observation_classes = set(
+            self.get_parameter('yolo_observation_classes').value
+        )
+        self.observe_all_yolo_classes = (
+            '*' in self.yolo_observation_classes
+        )
+        self.yolo_observation_confidence = float(
+            self.get_parameter('yolo_observation_confidence').value
+        )
         self.lock_yolo_target = bool(
             self.get_parameter('lock_yolo_target').value
         )
@@ -111,8 +126,15 @@ class RgbdGoalFinder(Node):
         self.process_period = 1.0 / float(
             self.get_parameter('process_rate_hz').value
         )
+        self.sync_queue_size = int(
+            self.get_parameter('sync_queue_size').value
+        )
+        self.sync_slop_s = float(self.get_parameter('sync_slop_s').value)
         self.publish_debug_image = bool(
             self.get_parameter('publish_debug_image').value
+        )
+        self.enable_target_localization = bool(
+            self.get_parameter('enable_target_localization').value
         )
         self.auto_send_goal = bool(self.get_parameter('auto_send_goal').value)
         self.auto_send_cooldown_s = float(
@@ -141,8 +163,6 @@ class RgbdGoalFinder(Node):
             'navigate_to_pose',
         )
 
-        self.depth_msg = None
-        self.camera_info = None
         self.latest_target = None
         self.latest_goal = None
         self.latest_goal_time = None
@@ -154,6 +174,7 @@ class RgbdGoalFinder(Node):
         self.active_goal_handle = None
         self.locked_track_id = None
         self.lock_lost_count = 0
+        self.yolo_observations = []
 
         self.target_pub = self.create_publisher(
             PointStamped,
@@ -176,24 +197,30 @@ class RgbdGoalFinder(Node):
             qos_profile_sensor_data,
         )
 
-        self.create_subscription(
-            Image,
-            self.depth_topic,
-            self.depth_callback,
-            qos_profile_sensor_data,
-        )
-        self.create_subscription(
-            CameraInfo,
-            self.camera_info_topic,
-            self.camera_info_callback,
-            qos_profile_sensor_data,
-        )
-        self.create_subscription(
+        self.color_sub = Subscriber(
+            self,
             Image,
             self.color_topic,
-            self.color_callback,
-            qos_profile_sensor_data,
+            qos_profile=qos_profile_sensor_data,
         )
+        self.depth_sub = Subscriber(
+            self,
+            Image,
+            self.depth_topic,
+            qos_profile=qos_profile_sensor_data,
+        )
+        self.camera_info_sub = Subscriber(
+            self,
+            CameraInfo,
+            self.camera_info_topic,
+            qos_profile=qos_profile_sensor_data,
+        )
+        self.rgbd_sync = ApproximateTimeSynchronizer(
+            [self.color_sub, self.depth_sub, self.camera_info_sub],
+            queue_size=max(self.sync_queue_size, 1),
+            slop=max(self.sync_slop_s, 0.0),
+        )
+        self.rgbd_sync.registerCallback(self.rgbd_callback)
         self.create_service(
             Trigger,
             'send_rgbd_goal',
@@ -245,13 +272,7 @@ class RgbdGoalFinder(Node):
         )
         return model
 
-    def depth_callback(self, msg):
-        self.depth_msg = msg
-
-    def camera_info_callback(self, msg):
-        self.camera_info = msg
-
-    def color_callback(self, msg):
+    def rgbd_callback(self, msg, depth_msg, camera_info):
         now = self.get_clock().now()
         elapsed = (now - self.last_process_time).nanoseconds * 1e-9
         if elapsed < self.process_period:
@@ -264,29 +285,9 @@ class RgbdGoalFinder(Node):
             self.get_logger().warn(f'Failed to convert RGB image: {exc}')
             return
 
-        if self.depth_msg is None or self.camera_info is None:
-            if self.publish_debug_image:
-                missing_inputs = []
-                if self.depth_msg is None:
-                    missing_inputs.append('depth')
-                if self.camera_info is None:
-                    missing_inputs.append('camera_info')
-                self.publish_debug_image_msg(
-                    color,
-                    msg.header,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    f'waiting for {", ".join(missing_inputs)}',
-                )
-            return
-
         try:
             depth = self.bridge.imgmsg_to_cv2(
-                self.depth_msg,
+                depth_msg,
                 desired_encoding='passthrough',
             )
         except CvBridgeError as exc:
@@ -326,7 +327,7 @@ class RgbdGoalFinder(Node):
             return
 
         u, v, score, box, track_id = detection
-        depth_m = self.sample_depth_m(depth, u, v, self.depth_msg.encoding)
+        depth_m = self.sample_depth_m(depth, u, v, depth_msg.encoding)
         if self.publish_debug_image:
             self.publish_debug_image_msg(
                 color,
@@ -339,6 +340,8 @@ class RgbdGoalFinder(Node):
                 track_id,
                 None,
             )
+        if not self.enable_target_localization:
+            return
         if depth_m is None:
             self.get_logger().debug(
                 f'{self.target_label} detected but no valid depth nearby'
@@ -349,8 +352,9 @@ class RgbdGoalFinder(Node):
             u,
             v,
             depth_m,
-            self.depth_msg.header.frame_id or msg.header.frame_id,
-            rclpy.time.Time().to_msg(),
+            depth_msg.header.frame_id or msg.header.frame_id,
+            depth_msg.header.stamp,
+            camera_info,
         )
         try:
             target = self.tf_buffer.transform(
@@ -386,6 +390,7 @@ class RgbdGoalFinder(Node):
         return self.find_red_target(hsv)
 
     def find_yolo_target(self, color):
+        self.yolo_observations = []
         if self.yolo_model is None:
             return None
 
@@ -415,18 +420,32 @@ class RgbdGoalFinder(Node):
         for box in results[0].boxes:
             class_id = int(box.cls[0])
             class_name = names.get(class_id, str(class_id))
-            if class_name != self.target_class:
-                continue
             confidence = float(box.conf[0])
             track_id = None
             if getattr(box, 'id', None) is not None:
                 track_id = int(box.id[0])
+            if (
+                confidence >= self.yolo_observation_confidence and
+                (
+                    self.observe_all_yolo_classes or
+                    class_name in self.yolo_observation_classes
+                )
+            ):
+                x1, y1, x2, y2 = box.xyxy[0].tolist()
+                self.yolo_observations.append({
+                    'class_name': class_name,
+                    'confidence': confidence,
+                    'track_id': track_id,
+                    'box': (x1, y1, x2, y2),
+                })
+            if class_name != self.target_class:
+                continue
             candidates.append((confidence, track_id, box))
 
         if not candidates:
             if self.locked_track_id is not None:
                 self.lock_lost_count += 1
-                if self.lock_lost_count > self.lock_lost_frames:
+                if self.lock_lost_count >= self.lock_lost_frames:
                     self.clear_locked_target()
             return None
 
@@ -448,7 +467,7 @@ class RgbdGoalFinder(Node):
                     return confidence, track_id, box
 
             self.lock_lost_count += 1
-            if self.lock_lost_count <= self.lock_lost_frames:
+            if self.lock_lost_count < self.lock_lost_frames:
                 return None, None, None
             self.clear_locked_target()
 
@@ -529,6 +548,33 @@ class RgbdGoalFinder(Node):
         status_label=None,
     ):
         debug = color.copy()
+        for observation in self.yolo_observations:
+            obs_box = observation['box']
+            ox1, oy1, ox2, oy2 = [int(value) for value in obs_box]
+            cv2.rectangle(
+                debug,
+                (ox1, oy1),
+                (ox2, oy2),
+                (80, 210, 80),
+                2,
+            )
+            obs_id = ''
+            if observation['track_id'] is not None:
+                obs_id = f' id:{observation["track_id"]}'
+            obs_label = (
+                f'{observation["class_name"]}{obs_id} '
+                f'{observation["confidence"]:.2f}'
+            )
+            cv2.putText(
+                debug,
+                obs_label,
+                (ox1, max(18, oy1 - 6)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (80, 210, 80),
+                2,
+                cv2.LINE_AA,
+            )
         if box is not None:
             x1, y1, x2, y2 = [int(value) for value in box]
             cv2.rectangle(debug, (x1, y1), (x2, y2), (0, 255, 255), 2)
@@ -594,12 +640,20 @@ class RgbdGoalFinder(Node):
             return None
         return float(np.median(valid))
 
-    def pixel_to_camera_point(self, u, v, depth_m, frame_id, stamp):
-        projection = self.camera_info.p
-        fx = projection[0] if projection[0] else self.camera_info.k[0]
-        fy = projection[5] if projection[5] else self.camera_info.k[4]
-        cx = projection[2] if projection[2] else self.camera_info.k[2]
-        cy = projection[6] if projection[6] else self.camera_info.k[5]
+    def pixel_to_camera_point(
+        self,
+        u,
+        v,
+        depth_m,
+        frame_id,
+        stamp,
+        camera_info,
+    ):
+        projection = camera_info.p
+        fx = projection[0] if projection[0] else camera_info.k[0]
+        fy = projection[5] if projection[5] else camera_info.k[4]
+        cx = projection[2] if projection[2] else camera_info.k[2]
+        cy = projection[6] if projection[6] else camera_info.k[5]
 
         point = PointStamped()
         point.header.stamp = stamp

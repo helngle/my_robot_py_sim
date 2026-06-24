@@ -1,0 +1,14 @@
+map_name: Test052601_table_viewpoint
+tables:
+  office_desk_1:
+    name: office_desk_1
+    frame_id: map
+    center:
+    - 6.583587425170585
+    - 0.5815583970536329
+    - 0.27592087059634984
+    yaw: 1.5407710298018966
+    size:
+    - 1.4
+    - 0.6
+    - 0.73

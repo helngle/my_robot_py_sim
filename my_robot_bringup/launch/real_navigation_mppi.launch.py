@@ -59,6 +59,9 @@ def generate_launch_description():
     use_orbbec_pointcloud = LaunchConfiguration('use_orbbec_pointcloud')
     use_rgbd_goal = LaunchConfiguration('use_rgbd_goal')
     rgbd_goal_auto_send = LaunchConfiguration('rgbd_goal_auto_send')
+    rgbd_enable_target_localization = LaunchConfiguration(
+        'rgbd_enable_target_localization'
+    )
     rgbd_target_detector = LaunchConfiguration('rgbd_target_detector')
     rgbd_target_class = LaunchConfiguration('rgbd_target_class')
     rgbd_yolo_model = LaunchConfiguration('rgbd_yolo_model')
@@ -223,6 +226,10 @@ def generate_launch_description():
             'lock_yolo_target': True,
             'lock_lost_frames': 15,
             'approach_distance_m': 0.8,
+            'enable_target_localization': ParameterValue(
+                rgbd_enable_target_localization,
+                value_type=bool,
+            ),
             'auto_send_goal': ParameterValue(
                 rgbd_goal_auto_send,
                 value_type=bool,
@@ -385,6 +392,10 @@ def generate_launch_description():
         DeclareLaunchArgument('use_orbbec_pointcloud', default_value='false'),
         DeclareLaunchArgument('use_rgbd_goal', default_value='false'),
         DeclareLaunchArgument('rgbd_goal_auto_send', default_value='false'),
+        DeclareLaunchArgument(
+            'rgbd_enable_target_localization',
+            default_value='true',
+        ),
         DeclareLaunchArgument('rgbd_target_detector', default_value='yolo'),
         DeclareLaunchArgument('rgbd_target_class', default_value='person'),
         DeclareLaunchArgument(

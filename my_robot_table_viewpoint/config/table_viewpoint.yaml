@@ -1,0 +1,42 @@
+table_viewpoint_planner:
+  ros__parameters:
+    map_frame: map
+    base_frame: base_footprint
+    depth_topic: /camera/depth/image_raw
+    camera_info_topic: /camera/color/camera_info
+    clicked_point_topic: /clicked_point
+    global_costmap_topic: /global_costmap/costmap
+    local_costmap_topic: /local_costmap/costmap
+
+    table_name: office_desk_1
+    table_length_m: 1.40
+    table_width_m: 0.60
+    table_height_m: 0.73
+    observe_tabletop_only: true
+    tabletop_thickness_m: 0.05
+
+    search_radius_m: 1.00
+    tabletop_height_tolerance_m: 0.10
+    plane_tolerance_m: 0.035
+    depth_min_m: 0.30
+    depth_max_m: 5.00
+    depth_pixel_stride: 4
+    min_plane_points: 80
+
+    robot_length_m: 0.80
+    robot_width_m: 0.70
+    footprint_margin_m: 0.05
+    occupied_cost_threshold: 50
+    reject_unknown_cost: true
+
+    min_standoff_m: 0.60
+    max_standoff_m: 3.00
+    standoff_step_m: 0.10
+    image_margin_ratio: 0.05
+    center_error_max: 0.06
+
+    auto_detect_after_click: true
+    auto_send_goal: true
+    publish_table_marker: true
+    publish_goal_marker: true
+    publish_candidate_markers: false

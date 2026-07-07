@@ -5,12 +5,12 @@ from copy import deepcopy
 import numpy as np
 import rclpy
 import yaml
-from cv_bridge import CvBridge, CvBridgeError
-from geometry_msgs.msg import Point, PointStamped, PoseStamped
+from geometry_msgs.msg import Point, PoseStamped
 from action_msgs.msg import GoalStatus
 from lifecycle_msgs.msg import State
 from lifecycle_msgs.srv import GetState
 from nav2_msgs.action import NavigateToPose
+from nav2_msgs.msg import SpeedLimit
 from nav_msgs.msg import OccupancyGrid
 from rclpy.action import ActionClient
 from rclpy.duration import Duration
@@ -19,9 +19,10 @@ from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from rclpy.qos import qos_profile_sensor_data
 from rclpy.time import Time
-from sensor_msgs.msg import CameraInfo, Image
+from sensor_msgs.msg import CameraInfo
 from std_srvs.srv import Trigger
 from tf2_ros import Buffer, TransformException, TransformListener
+from vision_msgs.msg import Detection3D
 from visualization_msgs.msg import Marker, MarkerArray
 
 
@@ -81,8 +82,17 @@ def yaw_quaternion(yaw):
     return 0.0, 0.0, math.sin(half), math.cos(half)
 
 
-def normalize_yaw(yaw):
-    return math.atan2(math.sin(yaw), math.cos(yaw))
+def normalize_axis_yaw(yaw):
+    return 0.5 * math.atan2(math.sin(2.0 * yaw), math.cos(2.0 * yaw))
+
+
+def pose_to_matrix(pose):
+    matrix = np.eye(4)
+    matrix[:3, :3] = quaternion_to_matrix(pose.orientation)
+    matrix[0, 3] = pose.position.x
+    matrix[1, 3] = pose.position.y
+    matrix[2, 3] = pose.position.z
+    return matrix
 
 
 class TableViewpointPlanner(Node):
@@ -93,25 +103,15 @@ class TableViewpointPlanner(Node):
             parameters=[
                 ('map_frame', 'map'),
                 ('base_frame', 'base_footprint'),
-                ('depth_topic', '/camera/depth/image_raw'),
                 ('camera_info_topic', '/camera/color/camera_info'),
-                ('clicked_point_topic', '/clicked_point'),
+                ('input_mode', 'topic'),
+                ('bbox_topic', '/target_bbox_3d'),
                 ('global_costmap_topic', '/global_costmap/costmap'),
                 ('local_costmap_topic', '/local_costmap/costmap'),
                 ('database_file', ''),
                 ('table_name', 'office_desk_1'),
-                ('table_length_m', 1.40),
-                ('table_width_m', 0.60),
-                ('table_height_m', 0.73),
                 ('observe_tabletop_only', True),
                 ('tabletop_thickness_m', 0.05),
-                ('search_radius_m', 1.0),
-                ('tabletop_height_tolerance_m', 0.10),
-                ('plane_tolerance_m', 0.035),
-                ('depth_min_m', 0.30),
-                ('depth_max_m', 5.0),
-                ('depth_pixel_stride', 4),
-                ('min_plane_points', 80),
                 ('robot_length_m', 0.80),
                 ('robot_width_m', 0.70),
                 ('footprint_margin_m', 0.05),
@@ -121,8 +121,24 @@ class TableViewpointPlanner(Node):
                 ('max_standoff_m', 3.00),
                 ('standoff_step_m', 0.10),
                 ('image_margin_ratio', 0.05),
-                ('center_error_max', 0.06),
-                ('auto_detect_after_click', True),
+                ('area_weight', 0.70),
+                ('horizontal_center_weight', 0.10),
+                ('vertical_center_weight', 0.08),
+                ('clearance_weight', 0.10),
+                ('travel_weight', 0.02),
+                ('target_area_ratio', 0.60),
+                ('horizontal_error_scale', 0.10),
+                ('vertical_error_scale', 0.20),
+                ('travel_distance_scale_m', 8.0),
+                ('max_bbox_tilt_deg', 10.0),
+                ('bbox_position_tolerance_m', 0.03),
+                ('bbox_size_tolerance_m', 0.03),
+                ('bbox_yaw_tolerance_rad', 0.03),
+                ('repeat_bbox_retriggers_goal', True),
+                ('repeat_bbox_retrigger_distance_m', 0.35),
+                ('approach_slowdown_distance_m', 1.50),
+                ('approach_speed_limit_mps', 0.15),
+                ('speed_limit_topic', '/speed_limit'),
                 ('auto_send_goal', True),
                 ('publish_table_marker', True),
                 ('publish_goal_marker', True),
@@ -132,28 +148,25 @@ class TableViewpointPlanner(Node):
 
         self.map_frame = self.parameter('map_frame')
         self.base_frame = self.parameter('base_frame')
+        self.input_mode = str(self.parameter('input_mode')).strip().lower()
+        if self.input_mode not in ('topic', 'yaml'):
+            self.get_logger().warn(
+                f'Unknown input_mode={self.input_mode!r}; using topic.'
+            )
+            self.input_mode = 'topic'
         self.database_file = os.path.expanduser(
             self.parameter('database_file')
         )
         self.table_name = self.parameter('table_name')
-        self.table_length = float(self.parameter('table_length_m'))
-        self.table_width = float(self.parameter('table_width_m'))
-        self.table_height = float(self.parameter('table_height_m'))
+        self.table_length = 0.0
+        self.table_width = 0.0
+        self.table_height = 0.0
         self.observe_tabletop_only = bool(
             self.parameter('observe_tabletop_only')
         )
         self.tabletop_thickness = float(
             self.parameter('tabletop_thickness_m')
         )
-        self.search_radius = float(self.parameter('search_radius_m'))
-        self.tabletop_height_tolerance = float(
-            self.parameter('tabletop_height_tolerance_m')
-        )
-        self.plane_tolerance = float(self.parameter('plane_tolerance_m'))
-        self.depth_min = float(self.parameter('depth_min_m'))
-        self.depth_max = float(self.parameter('depth_max_m'))
-        self.depth_stride = max(1, int(self.parameter('depth_pixel_stride')))
-        self.min_plane_points = int(self.parameter('min_plane_points'))
         self.robot_length = float(self.parameter('robot_length_m'))
         self.robot_width = float(self.parameter('robot_width_m'))
         self.footprint_margin = float(self.parameter('footprint_margin_m'))
@@ -167,10 +180,68 @@ class TableViewpointPlanner(Node):
         self.image_margin_ratio = float(
             self.parameter('image_margin_ratio')
         )
-        self.center_error_max = float(
-            self.parameter('center_error_max')
+        weights = np.array([
+            self.parameter('area_weight'),
+            self.parameter('horizontal_center_weight'),
+            self.parameter('vertical_center_weight'),
+            self.parameter('clearance_weight'),
+            self.parameter('travel_weight'),
+        ], dtype=float)
+        if not np.all(np.isfinite(weights)) or np.any(weights < 0.0):
+            raise ValueError('Viewpoint score weights must be finite and >= 0')
+        weight_sum = float(np.sum(weights))
+        if weight_sum <= 1e-9:
+            raise ValueError('At least one viewpoint score weight must be > 0')
+        (
+            self.area_weight,
+            self.horizontal_center_weight,
+            self.vertical_center_weight,
+            self.clearance_weight,
+            self.travel_weight,
+        ) = weights / weight_sum
+        self.target_area_ratio = max(
+            float(self.parameter('target_area_ratio')),
+            1e-6,
         )
-        self.auto_detect = bool(self.parameter('auto_detect_after_click'))
+        self.horizontal_error_scale = max(
+            float(self.parameter('horizontal_error_scale')),
+            1e-6,
+        )
+        self.vertical_error_scale = max(
+            float(self.parameter('vertical_error_scale')),
+            1e-6,
+        )
+        self.travel_distance_scale = max(
+            float(self.parameter('travel_distance_scale_m')),
+            1e-6,
+        )
+        self.max_bbox_tilt = math.radians(
+            float(self.parameter('max_bbox_tilt_deg'))
+        )
+        self.bbox_position_tolerance = float(
+            self.parameter('bbox_position_tolerance_m')
+        )
+        self.bbox_size_tolerance = float(
+            self.parameter('bbox_size_tolerance_m')
+        )
+        self.bbox_yaw_tolerance = float(
+            self.parameter('bbox_yaw_tolerance_rad')
+        )
+        self.repeat_bbox_retriggers_goal = bool(
+            self.parameter('repeat_bbox_retriggers_goal')
+        )
+        self.repeat_bbox_retrigger_distance = max(
+            float(self.parameter('repeat_bbox_retrigger_distance_m')),
+            0.0,
+        )
+        self.approach_slowdown_distance = max(
+            float(self.parameter('approach_slowdown_distance_m')),
+            0.0,
+        )
+        self.approach_speed_limit = max(
+            float(self.parameter('approach_speed_limit_mps')),
+            0.0,
+        )
         self.auto_send_goal = bool(self.parameter('auto_send_goal'))
         self.publish_table_marker = bool(
             self.parameter('publish_table_marker')
@@ -182,33 +253,36 @@ class TableViewpointPlanner(Node):
             self.parameter('publish_candidate_markers')
         )
 
-        self.bridge = CvBridge()
         self.tf_buffer = Buffer()
         self.tf_listener = TransformListener(self.tf_buffer, self)
-        self.nav_client = ActionClient(self, NavigateToPose, 'navigate_to_pose')
+        self.nav_client = ActionClient(
+            self,
+            NavigateToPose,
+            'navigate_to_pose',
+        )
         self.nav_state_client = self.create_client(
             GetState,
             '/bt_navigator/get_state',
         )
 
         self.camera_info = None
-        self.latest_depth = None
         self.global_costmap = None
         self.local_costmap = None
-        self.search_seed = None
-        self.pending_detection = False
         self.table = None
         self.best_goal = None
         self.candidates = []
         self.last_plan_status = None
-        self.latest_tf_fallback_reported = False
         self.auto_goal_sent = False
         self.goal_send_pending = False
         self.nav_state_pending = False
         self.nav_is_active = False
         self.nav_wait_reported = False
         self.goal_handle = None
+        self.active_goal_pose = None
+        self.approach_speed_limited = False
         self.marker_clear_published = False
+        self.table_version = 0
+        self.goal_table_version = None
 
         marker_qos = QoSProfile(depth=1)
         marker_qos.reliability = ReliabilityPolicy.RELIABLE
@@ -223,6 +297,11 @@ class TableViewpointPlanner(Node):
             'table_viewpoint_goal',
             marker_qos,
         )
+        self.speed_limit_pub = self.create_publisher(
+            SpeedLimit,
+            self.parameter('speed_limit_topic'),
+            10,
+        )
 
         self.create_subscription(
             CameraInfo,
@@ -231,15 +310,9 @@ class TableViewpointPlanner(Node):
             qos_profile_sensor_data,
         )
         self.create_subscription(
-            Image,
-            self.parameter('depth_topic'),
-            self.depth_callback,
-            qos_profile_sensor_data,
-        )
-        self.create_subscription(
-            PointStamped,
-            self.parameter('clicked_point_topic'),
-            self.clicked_point_callback,
+            Detection3D,
+            self.parameter('bbox_topic'),
+            self.bbox_callback,
             10,
         )
         self.create_subscription(
@@ -253,11 +326,6 @@ class TableViewpointPlanner(Node):
             self.parameter('local_costmap_topic'),
             self.local_costmap_callback,
             10,
-        )
-        self.create_service(
-            Trigger,
-            'detect_clicked_table',
-            self.detect_service,
         )
         self.create_service(
             Trigger,
@@ -275,11 +343,13 @@ class TableViewpointPlanner(Node):
             self.clear_service,
         )
         self.create_timer(1.0, self.refresh_callback)
+        self.create_timer(0.10, self.update_approach_speed_limit)
 
-        self.load_table_database()
+        if self.input_mode == 'yaml':
+            self.load_table_database()
         self.get_logger().info(
-            'Table viewpoint planner is isolated from the existing RGBD goal '
-            'pipeline. Use RViz Publish Point near the tabletop to calibrate.'
+            f'Table viewpoint input mode: {self.input_mode}. '
+            'topic uses Detection3D and yaml loads the saved table.'
         )
 
     def parameter(self, name):
@@ -300,243 +370,154 @@ class TableViewpointPlanner(Node):
         if self.table is not None and self.camera_info is not None:
             self.plan_viewpoint()
 
-    def depth_callback(self, msg):
-        self.latest_depth = msg
-        if self.pending_detection and self.camera_info is not None:
-            self.pending_detection = False
-            self.detect_table(msg)
-
-    def clicked_point_callback(self, msg):
-        point = self.point_in_map(msg)
-        if point is None:
+    def bbox_callback(self, msg):
+        if self.input_mode != 'topic':
             return
-        self.search_seed = point
-        self.pending_detection = self.auto_detect
-        self.auto_goal_sent = False
-        self.get_logger().info(
-            f'Table search seed: x={point[0]:.2f}, y={point[1]:.2f}; '
-            'waiting for the next depth frame.'
-        )
-        self.publish_markers()
-
-    def point_in_map(self, msg):
-        if not msg.header.frame_id or msg.header.frame_id == self.map_frame:
-            return np.array([msg.point.x, msg.point.y, msg.point.z])
-        try:
+        size = np.array([
+            msg.bbox.size.x,
+            msg.bbox.size.y,
+            msg.bbox.size.z,
+        ], dtype=float)
+        if not np.all(np.isfinite(size)) or np.any(size <= 0.01):
+            self.get_logger().warn(
+                'Ignoring Detection3D with non-positive or invalid bbox size.'
+            )
+            return
+        frame_id = msg.header.frame_id
+        if not frame_id:
+            self.get_logger().warn(
+                'Ignoring Detection3D because header.frame_id is empty.'
+            )
+            return
+        source_to_box = pose_to_matrix(msg.bbox.center)
+        if frame_id == self.map_frame:
+            map_to_box = source_to_box
+        else:
             stamp = Time.from_msg(msg.header.stamp)
             if stamp.nanoseconds == 0:
                 stamp = Time()
-            transform = self.tf_buffer.lookup_transform(
-                self.map_frame,
-                msg.header.frame_id,
-                stamp,
-                timeout=Duration(seconds=0.3),
-            )
-        except TransformException as exc:
-            self.get_logger().warn(f'Cannot transform clicked point: {exc}')
-            return None
-        matrix = transform_to_matrix(transform.transform)
-        point = matrix @ np.array([
-            msg.point.x,
-            msg.point.y,
-            msg.point.z,
-            1.0,
-        ])
-        return point[:3]
-
-    def detect_service(self, request, response):
-        del request
-        if self.search_seed is None:
-            response.success = False
-            response.message = 'Use RViz Publish Point near the table first.'
-            return response
-        if self.latest_depth is None or self.camera_info is None:
-            response.success = False
-            response.message = 'No synchronized camera depth/intrinsics received.'
-            return response
-        response.success = self.detect_table(self.latest_depth)
-        response.message = (
-            'Table geometry detected.'
-            if response.success else
-            'No matching tabletop plane found in the clicked region.'
-        )
-        return response
-
-    def detect_table(self, depth_msg):
-        if self.search_seed is None or self.camera_info is None:
-            return False
-        points = self.depth_points_in_map(depth_msg, self.camera_info)
-        if points is None:
-            return False
-        dx = points[:, 0] - self.search_seed[0]
-        dy = points[:, 1] - self.search_seed[1]
-        radial_mask = dx * dx + dy * dy <= self.search_radius ** 2
-        expected_top = self.table_height
-        height_mask = (
-            np.abs(points[:, 2] - expected_top) <=
-            self.tabletop_height_tolerance
-        )
-        points = points[radial_mask & height_mask]
-        if points.shape[0] < self.min_plane_points:
-            self.get_logger().warn(
-                f'Only {points.shape[0]} possible tabletop points found; '
-                f'need at least {self.min_plane_points}.'
-            )
-            return False
-
-        tabletop_z = self.dominant_tabletop_height(points[:, 2])
-        plane = points[
-            np.abs(points[:, 2] - tabletop_z) <= self.plane_tolerance
-        ]
-        if plane.shape[0] < self.min_plane_points:
-            self.get_logger().warn(
-                f'Tabletop plane has only {plane.shape[0]} inliers.'
-            )
-            return False
-
-        center_xy, yaw, observed_size = self.fit_tabletop(plane[:, :2])
-        if center_xy is None:
-            return False
-        self.table = {
-            'name': self.table_name,
-            'frame_id': self.map_frame,
-            'center': [
-                float(center_xy[0]),
-                float(center_xy[1]),
-                float(tabletop_z - self.table_height * 0.5),
-            ],
-            'yaw': float(yaw),
-            'size': [
-                self.table_length,
-                self.table_width,
-                self.table_height,
-            ],
-        }
-        self.get_logger().info(
-            'Detected tabletop: '
-            f'center=({center_xy[0]:.2f}, {center_xy[1]:.2f}), '
-            f'yaw={yaw:.2f}, z={tabletop_z:.2f}, '
-            f'observed={observed_size[0]:.2f}x{observed_size[1]:.2f} m.'
-        )
-        self.plan_viewpoint()
-        self.publish_markers()
-        return True
-
-    def depth_points_in_map(self, depth_msg, camera_info):
-        try:
-            depth = self.bridge.imgmsg_to_cv2(
-                depth_msg,
-                desired_encoding='passthrough',
-            )
-        except CvBridgeError as exc:
-            self.get_logger().warn(f'Cannot convert depth image: {exc}')
-            return None
-        depth = np.asarray(depth, dtype=np.float32)
-        if depth_msg.encoding in ('16UC1', 'mono16'):
-            depth *= 0.001
-        rows = np.arange(0, depth.shape[0], self.depth_stride)
-        columns = np.arange(0, depth.shape[1], self.depth_stride)
-        uu, vv = np.meshgrid(columns, rows)
-        zz = depth[vv, uu]
-        valid = (
-            np.isfinite(zz) &
-            (zz >= self.depth_min) &
-            (zz <= self.depth_max)
-        )
-        if not np.any(valid):
-            self.get_logger().warn('Depth image contains no valid points.')
-            return None
-        projection = camera_info.p
-        fx = projection[0] if projection[0] else camera_info.k[0]
-        fy = projection[5] if projection[5] else camera_info.k[4]
-        cx = projection[2] if projection[2] else camera_info.k[2]
-        cy = projection[6] if projection[6] else camera_info.k[5]
-        z = zz[valid]
-        x = (uu[valid].astype(np.float32) - cx) * z / fx
-        y = (vv[valid].astype(np.float32) - cy) * z / fy
-        points_camera = np.column_stack((x, y, z, np.ones_like(z)))
-        frame_id = depth_msg.header.frame_id or camera_info.header.frame_id
-        try:
-            transform = self.tf_buffer.lookup_transform(
-                self.map_frame,
-                frame_id,
-                Time.from_msg(depth_msg.header.stamp),
-                timeout=Duration(seconds=0.05),
-            )
-        except TransformException as exact_error:
             try:
                 transform = self.tf_buffer.lookup_transform(
                     self.map_frame,
                     frame_id,
-                    Time(),
-                    timeout=Duration(seconds=0.05),
+                    stamp,
+                    timeout=Duration(seconds=0.2),
                 )
-            except TransformException as latest_error:
+            except TransformException as exc:
                 self.get_logger().warn(
-                    'Cannot transform depth points at capture time or with '
-                    f'the latest TF: exact={exact_error}; latest={latest_error}'
+                    f'Cannot transform Detection3D bbox to map: {exc}'
                 )
-                return None
-            if not self.latest_tf_fallback_reported:
-                self.latest_tf_fallback_reported = True
-                self.get_logger().warn(
-                    'Depth capture time is slightly newer than the buffered '
-                    'map TF; using the latest TF for this calibration. Keep '
-                    'the robot stationary while clicking the tabletop.'
-                )
-        matrix = transform_to_matrix(transform.transform)
-        return (matrix @ points_camera.T).T[:, :3]
-
-    def dominant_tabletop_height(self, heights):
-        bin_size = max(self.plane_tolerance, 0.01)
-        minimum = float(np.min(heights))
-        maximum = float(np.max(heights)) + bin_size
-        bins = np.arange(minimum, maximum + bin_size, bin_size)
-        if bins.size < 2:
-            return float(np.median(heights))
-        histogram, edges = np.histogram(heights, bins=bins)
-        index = int(np.argmax(histogram))
-        in_bin = (
-            (heights >= edges[index]) &
-            (heights < edges[index + 1])
-        )
-        return float(np.median(heights[in_bin]))
-
-    def fit_tabletop(self, xy_points):
-        center = np.mean(xy_points, axis=0)
-        centered = xy_points - center
-        covariance = np.cov(centered, rowvar=False)
-        values, vectors = np.linalg.eigh(covariance)
-        long_axis = vectors[:, int(np.argmax(values))]
-        long_axis /= np.linalg.norm(long_axis)
-        short_axis = np.array([-long_axis[1], long_axis[0]])
-        long_values = xy_points @ long_axis
-        short_values = xy_points @ short_axis
-        long_min, long_max = np.percentile(long_values, [2.0, 98.0])
-        short_min, short_max = np.percentile(short_values, [2.0, 98.0])
-        observed_length = float(long_max - long_min)
-        observed_width = float(short_max - short_min)
-        minimum_observed_length = min(self.table_length * 0.30, 0.40)
-        minimum_observed_width = min(self.table_width * 0.30, 0.20)
-        if (
-            observed_length < minimum_observed_length or
-            observed_width < minimum_observed_width
-        ):
-            self.get_logger().warn(
-                'Observed plane is too small to determine table orientation: '
-                f'{observed_length:.2f}x{observed_width:.2f} m.'
+                return
+            map_to_box = (
+                transform_to_matrix(transform.transform) @ source_to_box
             )
-            return None, None, None
-        local_center = np.array([
-            (long_min + long_max) * 0.5,
-            (short_min + short_max) * 0.5,
-        ])
-        center_xy = (
-            long_axis * local_center[0] +
-            short_axis * local_center[1]
+        rotation = map_to_box[:3, :3]
+        upright_alignment = abs(float(rotation[2, 2]))
+        minimum_alignment = math.cos(self.max_bbox_tilt)
+        if upright_alignment < minimum_alignment:
+            tilt = math.degrees(math.acos(min(upright_alignment, 1.0)))
+            self.get_logger().warn(
+                f'Ignoring tilted bbox ({tilt:.1f} deg); expected a '
+                'near-horizontal tabletop.'
+            )
+            return
+        center = map_to_box[:3, 3]
+        yaw = math.atan2(rotation[1, 0], rotation[0, 0])
+        self.update_runtime_table(
+            center=center,
+            yaw=yaw,
+            size=size,
+            source=f'Detection3D {msg.id or "without id"}',
         )
-        yaw = normalize_yaw(math.atan2(long_axis[1], long_axis[0]))
-        return center_xy, yaw, (observed_length, observed_width)
+
+    def update_runtime_table(self, center, yaw, size, source):
+        center = np.asarray(center, dtype=float)
+        size = np.asarray(size, dtype=float)
+        if (
+            center.shape != (3,) or size.shape != (3,) or
+            not np.all(np.isfinite(center)) or
+            not np.all(np.isfinite(size)) or
+            np.any(size <= 0.01)
+        ):
+            self.get_logger().warn(f'Ignoring invalid table from {source}.')
+            return False
+        length, width, height = size
+        if width > length:
+            length, width = width, length
+            yaw += math.pi * 0.5
+        yaw = normalize_axis_yaw(yaw)
+        normalized_size = np.array([length, width, height], dtype=float)
+        if self.table is not None:
+            old_center = np.asarray(self.table['center'], dtype=float)
+            old_size = np.asarray(self.table['size'], dtype=float)
+            yaw_error = abs(normalize_axis_yaw(yaw - self.table['yaw']))
+            if (
+                np.linalg.norm(center - old_center) <=
+                self.bbox_position_tolerance and
+                np.max(np.abs(normalized_size - old_size)) <=
+                self.bbox_size_tolerance and
+                yaw_error <= self.bbox_yaw_tolerance
+            ):
+                self.retrigger_repeated_bbox(source)
+                return False
+        self.table_length = float(length)
+        self.table_width = float(width)
+        self.table_height = float(height)
+        self.table = {
+            'name': self.table_name,
+            'frame_id': self.map_frame,
+            'center': [float(value) for value in center],
+            'yaw': float(yaw),
+            'size': [float(value) for value in normalized_size],
+        }
+        self.table_version += 1
+        self.best_goal = None
+        self.candidates = []
+        self.last_plan_status = None
+        if self.goal_handle is None:
+            self.auto_goal_sent = False
+        self.get_logger().info(
+            f'Accepted {source}: center=({center[0]:.2f}, '
+            f'{center[1]:.2f}, {center[2]:.2f}), '
+            f'size={length:.2f}x{width:.2f}x{height:.2f} m, '
+            f'yaw={yaw:.2f}.'
+        )
+        if self.camera_info is not None and self.global_costmap is not None:
+            self.plan_viewpoint()
+        else:
+            self.publish_markers()
+        return True
+
+    def retrigger_repeated_bbox(self, source):
+        if (
+            not self.repeat_bbox_retriggers_goal or
+            not self.auto_send_goal or
+            self.goal_send_pending or
+            self.goal_handle is not None
+        ):
+            return False
+        if self.best_goal is None:
+            self.auto_goal_sent = False
+            return self.plan_viewpoint()
+        robot_xy = self.robot_position()
+        if robot_xy is None:
+            self.get_logger().warn(
+                f'Cannot retrigger repeated {source}: robot TF unavailable.'
+            )
+            return False
+        goal_xy = np.array([
+            self.best_goal.pose.position.x,
+            self.best_goal.pose.position.y,
+        ])
+        distance = float(np.linalg.norm(robot_xy - goal_xy))
+        if distance <= self.repeat_bbox_retrigger_distance:
+            return False
+        self.get_logger().info(
+            f'Received repeated {source} while robot is {distance:.2f} m '
+            'from the previous viewpoint; starting a new task.'
+        )
+        self.auto_goal_sent = False
+        return self.plan_viewpoint()
 
     def plan_viewpoint(self):
         if self.table is None or self.camera_info is None:
@@ -588,10 +569,12 @@ class TableViewpointPlanner(Node):
                     table_center[1] - goal_xy[1],
                     table_center[0] - goal_xy[0],
                 )
-                safe = self.goal_footprint_is_free(
-                    goal_xy[0],
-                    goal_xy[1],
-                    yaw,
+                safe, clearance_score, max_cost = (
+                    self.goal_footprint_evaluation(
+                        goal_xy[0],
+                        goal_xy[1],
+                        yaw,
+                    )
                 )
                 projection = self.evaluate_projection(
                     goal_xy,
@@ -599,11 +582,11 @@ class TableViewpointPlanner(Node):
                     transform_base_camera,
                     corners,
                 )
-                valid = safe and projection['valid']
-                path_distance = 0.0
+                valid = safe and projection['inside']
+                path_distance = None
                 if robot_xy is not None:
                     path_distance = float(np.linalg.norm(goal_xy - robot_xy))
-                candidates.append({
+                candidate = {
                     'x': float(goal_xy[0]),
                     'y': float(goal_xy[1]),
                     'yaw': float(yaw),
@@ -611,11 +594,14 @@ class TableViewpointPlanner(Node):
                     'safe': safe,
                     'valid': valid,
                     'inside': projection['inside'],
-                    'centered': projection['centered'],
                     'area_ratio': projection['area_ratio'],
-                    'center_error': projection['center_error'],
+                    'horizontal_error': projection['horizontal_error'],
+                    'vertical_error': projection['vertical_error'],
+                    'clearance_score': clearance_score,
+                    'max_cost': max_cost,
                     'path_distance': path_distance,
-                })
+                }
+                candidates.append(candidate)
         self.candidates = candidates
         valid_candidates = [item for item in candidates if item['valid']]
         if not valid_candidates:
@@ -625,30 +611,43 @@ class TableViewpointPlanner(Node):
                 item['safe'] and item['inside']
                 for item in candidates
             )
-            centered_count = sum(
-                item['safe'] and item['inside'] and item['centered']
-                for item in candidates
-            )
             self.set_plan_status(
                 'no valid viewpoint: '
                 f'total={len(candidates)}, safe={safe_count}, '
-                f'full_frame={inside_count}, centered={centered_count}'
+                f'full_frame={inside_count}'
             )
             self.publish_markers()
             return False
-        best = min(
+        maximum_area_ratio = max(
+            item['area_ratio'] for item in valid_candidates
+        )
+        area_reference = max(
+            min(self.target_area_ratio, maximum_area_ratio),
+            1e-6,
+        )
+        for candidate in valid_candidates:
+            candidate.update(
+                self.score_candidate(candidate, area_reference)
+            )
+        best = max(
             valid_candidates,
             key=lambda item: (
-                -item['area_ratio'],
-                item['center_error'],
-                item['path_distance'],
+                item['score'],
+                item['area_score'],
+                item['clearance_score'],
             ),
         )
         self.best_goal = self.make_goal(best)
         self.goal_pub.publish(self.best_goal)
         self.set_plan_status(
-            f'goal ready: standoff={best["standoff"]:.2f} m, '
-            f'tabletop_area={best["area_ratio"] * 100.0:.1f}%'
+            f'goal ready: score={best["score"]:.1f}/100, '
+            f'fill={best["area_ratio"] * 100.0:.2f}%, '
+            f'area_score={best["area_score"]:.2f}, '
+            f'h_center={best["horizontal_center_score"]:.2f}, '
+            f'v_center={best["vertical_center_score"]:.2f}, '
+            f'clearance={best["clearance_score"]:.2f}, '
+            f'travel={best["travel_score"]:.2f}, '
+            f'standoff={best["standoff"]:.2f} m'
         )
         self.publish_markers()
         self.try_auto_send_goal()
@@ -668,11 +667,10 @@ class TableViewpointPlanner(Node):
         camera_points = (camera_to_map @ homogeneous.T).T[:, :3]
         if np.any(camera_points[:, 2] <= 0.05):
             return {
-                'valid': False,
                 'inside': False,
-                'centered': False,
                 'area_ratio': 0.0,
-                'center_error': 1.0,
+                'horizontal_error': 1.0,
+                'vertical_error': 1.0,
             }
         projection = self.camera_info.p
         fx = projection[0] if projection[0] else self.camera_info.k[0]
@@ -697,15 +695,51 @@ class TableViewpointPlanner(Node):
         )
         area_ratio = polygon_area / (width * height)
         center_u = float(np.mean(u))
-        center_error = abs(center_u - cx) / width
-        centered = center_error <= self.center_error_max
-        valid = inside and centered
+        center_v = float(np.mean(v))
+        horizontal_error = abs(center_u - cx) / width
+        vertical_error = abs(center_v - cy) / height
         return {
-            'valid': valid,
             'inside': inside,
-            'centered': centered,
             'area_ratio': area_ratio,
-            'center_error': center_error,
+            'horizontal_error': horizontal_error,
+            'vertical_error': vertical_error,
+        }
+
+    def score_candidate(self, candidate, area_reference=None):
+        if area_reference is None:
+            area_reference = self.target_area_ratio
+        area_score = min(
+            max(candidate['area_ratio'] / area_reference, 0.0),
+            1.0,
+        )
+        horizontal_center_score = 1.0 - min(
+            candidate['horizontal_error'] / self.horizontal_error_scale,
+            1.0,
+        )
+        vertical_center_score = 1.0 - min(
+            candidate['vertical_error'] / self.vertical_error_scale,
+            1.0,
+        )
+        if candidate['path_distance'] is None:
+            travel_score = 0.0
+        else:
+            travel_score = 1.0 - min(
+                candidate['path_distance'] / self.travel_distance_scale,
+                1.0,
+            )
+        score = 100.0 * (
+            self.area_weight * area_score +
+            self.horizontal_center_weight * horizontal_center_score +
+            self.vertical_center_weight * vertical_center_score +
+            self.clearance_weight * candidate['clearance_score'] +
+            self.travel_weight * travel_score
+        )
+        return {
+            'score': float(score),
+            'area_score': float(area_score),
+            'horizontal_center_score': float(horizontal_center_score),
+            'vertical_center_score': float(vertical_center_score),
+            'travel_score': float(travel_score),
         }
 
     def tabletop_corners(self):
@@ -757,31 +791,40 @@ class TableViewpointPlanner(Node):
             transform.transform.translation.y,
         ])
 
-    def goal_footprint_is_free(self, x, y, yaw):
+    def goal_footprint_evaluation(self, x, y, yaw):
         if self.global_costmap is None:
-            return False
-        if not self.footprint_is_free_in_costmap(
+            return False, 0.0, self.occupied_threshold
+        global_safe, global_max_cost = self.footprint_cost_in_costmap(
             self.global_costmap,
             x,
             y,
             yaw,
             reject_outside=True,
-        ):
-            return False
+        )
+        if not global_safe:
+            return False, 0.0, global_max_cost
+        max_cost = global_max_cost
         if (
             self.local_costmap is not None and
             self.world_to_costmap(x, y, self.local_costmap) is not None
         ):
-            return self.footprint_is_free_in_costmap(
+            local_safe, local_max_cost = self.footprint_cost_in_costmap(
                 self.local_costmap,
                 x,
                 y,
                 yaw,
                 reject_outside=False,
             )
-        return True
+            if not local_safe:
+                return False, 0.0, local_max_cost
+            max_cost = max(max_cost, local_max_cost)
+        clearance_score = 1.0 - min(
+            max(max_cost, 0) / max(self.occupied_threshold, 1),
+            1.0,
+        )
+        return True, float(clearance_score), int(max_cost)
 
-    def footprint_is_free_in_costmap(
+    def footprint_cost_in_costmap(
         self,
         costmap,
         x,
@@ -805,6 +848,7 @@ class TableViewpointPlanner(Node):
         )
         cosine = math.cos(yaw)
         sine = math.sin(yaw)
+        max_cost = 0
         for offset_x in local_x:
             for offset_y in local_y:
                 world_x = x + cosine * offset_x - sine * offset_y
@@ -812,16 +856,18 @@ class TableViewpointPlanner(Node):
                 cell = self.world_to_costmap(world_x, world_y, costmap)
                 if cell is None:
                     if reject_outside:
-                        return False
+                        return False, self.occupied_threshold
                     continue
                 grid_x, grid_y = cell
                 index = grid_y * costmap.info.width + grid_x
                 cost = costmap.data[index]
                 if cost < 0 and self.reject_unknown:
-                    return False
+                    return False, self.occupied_threshold
                 if cost >= self.occupied_threshold:
-                    return False
-        return True
+                    return False, cost
+                if cost >= 0:
+                    max_cost = max(max_cost, cost)
+        return True, max_cost
 
     def world_to_costmap(self, x, y, costmap):
         origin = costmap.info.origin
@@ -915,16 +961,11 @@ class TableViewpointPlanner(Node):
         except (KeyError, TypeError, ValueError) as exc:
             self.get_logger().warn(f'Invalid saved table calibration: {exc}')
             return
-        self.table = {
-            'name': self.table_name,
-            'frame_id': self.map_frame,
-            'center': center,
-            'yaw': yaw,
-            'size': size,
-        }
-        self.table_length, self.table_width, self.table_height = size
-        self.get_logger().info(
-            f'Loaded {self.table_name} from {self.database_file}'
+        self.update_runtime_table(
+            center=center,
+            yaw=yaw,
+            size=size,
+            source=f'saved table {self.table_name}',
         )
 
     def read_database(self):
@@ -945,10 +986,10 @@ class TableViewpointPlanner(Node):
 
     def clear_service(self, request, response):
         del request
+        self.table_version += 1
         self.table = None
         self.best_goal = None
         self.candidates = []
-        self.search_seed = None
         self.auto_goal_sent = False
         self.goal_send_pending = False
         self.nav_wait_reported = False
@@ -968,25 +1009,26 @@ class TableViewpointPlanner(Node):
                 '"Viewpoint status" log and the green candidate markers.'
             )
             return response
-        if not self.nav_is_active:
-            response.success = False
-            response.message = (
-                'Nav2 is not active yet; automatic sending will retry.'
-            )
-            return response
         response.success = self.send_current_goal()
         response.message = (
             'Submitted table viewpoint goal; check the node log for '
             'acceptance.'
             if response.success else
-            'A table viewpoint goal request is already pending.'
+            'Nav2 action server is unavailable, or a goal is already active.'
         )
         return response
 
     def send_current_goal(self):
-        if self.best_goal is None or self.goal_send_pending:
+        if (
+            self.best_goal is None or
+            self.goal_send_pending or
+            self.goal_handle is not None
+        ):
             return False
         if not self.nav_client.server_is_ready():
+            self.get_logger().warn(
+                'Cannot send viewpoint: /navigate_to_pose is not ready.'
+            )
             return False
         goal = NavigateToPose.Goal()
         goal.pose = deepcopy(self.best_goal)
@@ -996,9 +1038,14 @@ class TableViewpointPlanner(Node):
             self.get_logger().warn(f'Cannot submit Nav2 goal: {exc}')
             return False
         self.goal_send_pending = True
+        self.active_goal_pose = deepcopy(goal.pose)
+        self.goal_table_version = self.table_version
         future.add_done_callback(self.goal_response_callback)
         self.get_logger().info(
-            'Submitted table viewpoint goal; waiting for Nav2 acceptance.'
+            'Submitted table viewpoint goal '
+            f'x={goal.pose.pose.position.x:.2f}, '
+            f'y={goal.pose.pose.position.y:.2f}; '
+            'waiting for Nav2 acceptance.'
         )
         return True
 
@@ -1008,12 +1055,16 @@ class TableViewpointPlanner(Node):
             goal_handle = future.result()
         except Exception as exc:
             self.auto_goal_sent = False
+            self.active_goal_pose = None
+            self.goal_table_version = None
             self.get_logger().warn(
                 f'Nav2 goal request failed; will retry automatically: {exc}'
             )
             return
         if not goal_handle.accepted:
             self.auto_goal_sent = False
+            self.active_goal_pose = None
+            self.goal_table_version = None
             self.get_logger().warn(
                 'Nav2 rejected the table viewpoint goal; will retry when '
                 'bt_navigator is active.'
@@ -1027,21 +1078,75 @@ class TableViewpointPlanner(Node):
 
     def navigation_result_callback(self, future):
         self.goal_handle = None
+        self.active_goal_pose = None
+        self.clear_approach_speed_limit()
+        completed_table_version = self.goal_table_version
+        self.goal_table_version = None
         try:
             status = future.result().status
         except Exception as exc:
             self.get_logger().warn(f'Cannot read Nav2 goal result: {exc}')
+            if completed_table_version != self.table_version:
+                self.auto_goal_sent = False
+                self.plan_viewpoint()
             return
         status_names = {
             GoalStatus.STATUS_SUCCEEDED: 'succeeded',
             GoalStatus.STATUS_CANCELED: 'canceled',
             GoalStatus.STATUS_ABORTED: 'aborted',
         }
-        status_name = status_names.get(status, f'finished with status {status}')
+        status_name = status_names.get(
+            status,
+            f'finished with status {status}',
+        )
         log = self.get_logger().info
         if status != GoalStatus.STATUS_SUCCEEDED:
             log = self.get_logger().warn
         log(f'Table viewpoint navigation {status_name}.')
+        if completed_table_version != self.table_version:
+            self.auto_goal_sent = False
+            self.get_logger().info(
+                'A newer 3D bbox arrived during navigation; planning its '
+                'viewpoint now.'
+            )
+            self.plan_viewpoint()
+
+    def publish_speed_limit(self, speed_limit):
+        message = SpeedLimit()
+        message.header.stamp = self.get_clock().now().to_msg()
+        message.percentage = False
+        message.speed_limit = float(speed_limit)
+        self.speed_limit_pub.publish(message)
+
+    def clear_approach_speed_limit(self):
+        if not self.approach_speed_limited:
+            return
+        self.publish_speed_limit(0.0)
+        self.approach_speed_limited = False
+        self.get_logger().info('Cleared table-approach speed limit.')
+
+    def update_approach_speed_limit(self):
+        if self.goal_handle is None or self.active_goal_pose is None:
+            self.clear_approach_speed_limit()
+            return
+        if self.approach_speed_limited:
+            return
+        robot_xy = self.robot_position()
+        if robot_xy is None:
+            return
+        goal_xy = np.array([
+            self.active_goal_pose.pose.position.x,
+            self.active_goal_pose.pose.position.y,
+        ])
+        distance = float(np.linalg.norm(robot_xy - goal_xy))
+        if distance > self.approach_slowdown_distance:
+            return
+        self.publish_speed_limit(self.approach_speed_limit)
+        self.approach_speed_limited = True
+        self.get_logger().info(
+            f'Within {distance:.2f} m of table viewpoint; limiting '
+            f'linear speed to {self.approach_speed_limit:.2f} m/s.'
+        )
 
     def try_auto_send_goal(self):
         if (
@@ -1120,26 +1225,6 @@ class TableViewpointPlanner(Node):
             self.marker_clear_published = True
             return
         marker_id = 0
-        if self.publish_candidate_markers and self.search_seed is not None:
-            marker = Marker()
-            marker.header = delete_marker.header
-            marker.ns = 'table_search'
-            marker.id = marker_id
-            marker_id += 1
-            marker.type = Marker.CYLINDER
-            marker.action = Marker.ADD
-            marker.pose.position.x = float(self.search_seed[0])
-            marker.pose.position.y = float(self.search_seed[1])
-            marker.pose.position.z = 0.01
-            marker.pose.orientation.w = 1.0
-            marker.scale.x = self.search_radius * 2.0
-            marker.scale.y = self.search_radius * 2.0
-            marker.scale.z = 0.02
-            marker.color.r = 1.0
-            marker.color.g = 0.8
-            marker.color.b = 0.0
-            marker.color.a = 0.18
-            markers.markers.append(marker)
         if self.publish_table_marker and self.table is not None:
             marker_id = self.add_table_markers(markers, marker_id)
         if self.publish_candidate_markers:

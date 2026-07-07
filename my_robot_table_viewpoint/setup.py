@@ -32,13 +32,25 @@ setup(
     zip_safe=True,
     maintainer='jensen',
     maintainer_email='jensen@todo.todo',
-    description='Click-guided 3D table localization and viewpoint planning.',
+    description='3D bounding-box-driven table viewpoint planning.',
     license='Apache-2.0',
     entry_points={
         'console_scripts': [
             (
                 'table_viewpoint_planner = '
                 'my_robot_table_viewpoint.table_viewpoint_planner:main'
+            ),
+            (
+                'sam_table_bbox_node = '
+                'my_robot_table_viewpoint.sam_table_bbox_node:main'
+            ),
+            (
+                'sam3_table_bbox_node = '
+                'my_robot_table_viewpoint.sam3_table_bbox_node:main'
+            ),
+            (
+                'hybrid_viewpoint_orchestrator = '
+                'my_robot_table_viewpoint.hybrid_viewpoint_orchestrator:main'
             ),
         ],
     },

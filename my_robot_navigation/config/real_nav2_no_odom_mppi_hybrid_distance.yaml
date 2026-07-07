@@ -77,43 +77,47 @@ controller_server:
     min_theta_velocity_threshold: 0.001
     failure_tolerance: 0.3
     progress_checker_plugin: progress_checker
-    goal_checker_plugins: ["goal_checker"]
-    controller_plugins: ["FollowPath"]
+    goal_checker_plugins: ["LongGoalChecker", "ShortGoalChecker", "FineGoalChecker"]
+    controller_plugins: ["FollowPath", "ShortPath", "FinePath"]
 
     progress_checker:
       plugin: nav2_controller::SimpleProgressChecker
-      required_movement_radius: 0.15
+      # Fine moves may be only a few centimetres, so the shared progress
+      # checker must not require the 15 cm used by the original profile.
+      required_movement_radius: 0.03
       movement_time_allowance: 20.0
 
-    goal_checker:
+    LongGoalChecker:
       plugin: nav2_controller::SimpleGoalChecker
       stateful: false
       xy_goal_tolerance: 0.10
       yaw_goal_tolerance: 0.05
 
-    FollowPath:
-      plugin: nav2_rotation_shim_controller::RotationShimController
-      primary_controller: nav2_mppi_controller::MPPIController
-      angular_dist_threshold: 0.80
-      angular_disengage_threshold: 0.32
-      forward_sampling_distance: 0.30
-      rotate_to_heading_angular_vel: 0.50
-      max_angular_accel: 1.5
-      simulate_ahead_time: 1.0
-      rotate_to_goal_heading: false
-      closed_loop: true
+    ShortGoalChecker:
+      plugin: nav2_controller::SimpleGoalChecker
+      stateful: false
+      xy_goal_tolerance: 0.04
+      yaw_goal_tolerance: 3.14
 
+    FineGoalChecker:
+      plugin: nav2_controller::SimpleGoalChecker
+      stateful: false
+      xy_goal_tolerance: 0.025
+      yaw_goal_tolerance: 3.14
+
+    FollowPath:
+      plugin: nav2_mppi_controller::MPPIController
       time_steps: 30
       model_dt: 0.10
       batch_size: 1200
       iteration_count: 1
-      vx_std: 0.18
-      vy_std: 0.04
-      wz_std: 0.32
-      vx_max: 0.40
-      vx_min: -0.08
-      vy_max: 0.09
-      wz_max: 0.70
+      vx_std: 0.14
+      vy_std: 0.03
+      wz_std: 0.22
+      vx_max: 0.28
+      vx_min: -0.05
+      vy_max: 0.07
+      wz_max: 0.45
       motion_model: "Omni"
       prune_distance: 1.5
       transform_tolerance: 1.0
@@ -146,9 +150,9 @@ controller_server:
         cost_weight: 4.0
         threshold_to_consider: 1.2
       GoalAngleCritic:
-        enabled: true
+        enabled: false
         cost_power: 1
-        cost_weight: 6.0
+        cost_weight: 0.0
         threshold_to_consider: 0.8
       PathFollowCritic:
         enabled: true
@@ -164,22 +168,180 @@ controller_server:
         trajectory_point_step: 2
         threshold_to_consider: 0.5
       PathAngleCritic:
-        enabled: true
+        enabled: false
         cost_power: 1
-        cost_weight: 48.0
+        cost_weight: 0.0
         offset_from_furthest: 4
         threshold_to_consider: 0.5
         max_angle_to_furthest: 0.32
         forward_preference: true
       PreferForwardCritic:
-        enabled: true
+        enabled: false
         cost_power: 1
-        cost_weight: 10.0
+        cost_weight: 0.0
         threshold_to_consider: 1.0
       TwirlingCritic:
         enabled: false
         cost_power: 1
         cost_weight: 0.0
+
+    # Under 1 m: direct Omni MPPI without RotationShim. Forward preference is
+    # deliberately weak so the four-wheel-steering base may reverse or crab.
+    ShortPath:
+      plugin: nav2_mppi_controller::MPPIController
+      time_steps: 24
+      model_dt: 0.10
+      batch_size: 1200
+      iteration_count: 1
+      vx_std: 0.07
+      vy_std: 0.05
+      wz_std: 0.12
+      vx_max: 0.12
+      vx_min: -0.10
+      vy_max: 0.07
+      wz_max: 0.25
+      motion_model: "Omni"
+      prune_distance: 1.0
+      transform_tolerance: 1.0
+      temperature: 0.35
+      gamma: 0.02
+      retry_attempt_limit: 1
+      visualize: false
+      reset_period: 1.0
+      regenerate_noises: false
+      critics: ["ConstraintCritic", "CostCritic", "GoalCritic", "GoalAngleCritic", "PathFollowCritic", "PathAlignCritic", "PathAngleCritic", "PreferForwardCritic", "TwirlingCritic"]
+      ConstraintCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 4.0
+      CostCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 6.0
+        critical_cost: 300.0
+        consider_footprint: true
+        collision_cost: 1000000.0
+        near_goal_distance: 0.8
+        trajectory_point_step: 2
+      GoalCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 8.0
+        threshold_to_consider: 1.2
+      GoalAngleCritic:
+        enabled: false
+        cost_power: 1
+        cost_weight: 0.0
+        threshold_to_consider: 0.8
+      PathFollowCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 4.0
+        offset_from_furthest: 4
+        threshold_to_consider: 0.5
+      PathAlignCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 6.0
+        offset_from_furthest: 8
+        trajectory_point_step: 2
+        threshold_to_consider: 0.5
+      PathAngleCritic:
+        enabled: false
+        cost_power: 1
+        cost_weight: 0.0
+        offset_from_furthest: 3
+        threshold_to_consider: 0.5
+        max_angle_to_furthest: 1.20
+        forward_preference: false
+      PreferForwardCritic:
+        enabled: false
+        cost_power: 1
+        cost_weight: 0.0
+        threshold_to_consider: 1.0
+      TwirlingCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 8.0
+
+    # Post-arrival visual refinement: same Omni behavior as ShortPath, with
+    # lower velocity and sampling ranges for controlled centimetre-scale moves.
+    FinePath:
+      plugin: nav2_mppi_controller::MPPIController
+      time_steps: 20
+      model_dt: 0.10
+      batch_size: 1200
+      iteration_count: 1
+      vx_std: 0.03
+      vy_std: 0.03
+      wz_std: 0.07
+      vx_max: 0.04
+      vx_min: -0.04
+      vy_max: 0.035
+      wz_max: 0.12
+      motion_model: "Omni"
+      prune_distance: 0.6
+      transform_tolerance: 1.0
+      temperature: 0.30
+      gamma: 0.015
+      retry_attempt_limit: 1
+      visualize: false
+      reset_period: 1.0
+      regenerate_noises: false
+      critics: ["ConstraintCritic", "CostCritic", "GoalCritic", "GoalAngleCritic", "PathFollowCritic", "PathAlignCritic", "PathAngleCritic", "PreferForwardCritic", "TwirlingCritic"]
+      ConstraintCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 4.0
+      CostCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 7.0
+        critical_cost: 300.0
+        consider_footprint: true
+        collision_cost: 1000000.0
+        near_goal_distance: 0.8
+        trajectory_point_step: 1
+      GoalCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 12.0
+        threshold_to_consider: 0.8
+      GoalAngleCritic:
+        enabled: false
+        cost_power: 1
+        cost_weight: 0.0
+        threshold_to_consider: 0.6
+      PathFollowCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 2.0
+        offset_from_furthest: 3
+        threshold_to_consider: 0.3
+      PathAlignCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 2.0
+        offset_from_furthest: 4
+        trajectory_point_step: 1
+        threshold_to_consider: 0.3
+      PathAngleCritic:
+        enabled: false
+        cost_power: 1
+        cost_weight: 0.0
+        offset_from_furthest: 2
+        threshold_to_consider: 0.3
+        max_angle_to_furthest: 1.57
+        forward_preference: false
+      PreferForwardCritic:
+        enabled: false
+        cost_power: 1
+        cost_weight: 0.0
+        threshold_to_consider: 0.5
+      TwirlingCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 2.0
 
 local_costmap:
   local_costmap:
@@ -297,9 +459,9 @@ behavior_server:
     robot_base_frame: base_footprint
     transform_tolerance: 1.0
     simulate_ahead_time: 2.0
-    max_rotational_vel: 0.70
+    max_rotational_vel: 0.45
     min_rotational_vel: 0.12
-    rotational_acc_lim: 1.40
+    rotational_acc_lim: 0.90
 
 waypoint_follower:
   ros__parameters:
@@ -318,10 +480,10 @@ velocity_smoother:
     smoothing_frequency: 30.0
     scale_velocities: true
     feedback: OPEN_LOOP
-    max_velocity: [0.40, 0.09, 0.70]
-    min_velocity: [-0.08, -0.09, -0.70]
-    max_accel: [0.75, 0.65, 1.50]
-    max_decel: [-0.75, -0.65, -1.50]
+    max_velocity: [0.28, 0.07, 0.45]
+    min_velocity: [-0.05, -0.07, -0.45]
+    max_accel: [0.45, 0.40, 0.90]
+    max_decel: [-0.45, -0.40, -0.90]
     odom_topic: /estimated_odom
     odom_duration: 0.2
     deadband_velocity: [0.0, 0.0, 0.03]

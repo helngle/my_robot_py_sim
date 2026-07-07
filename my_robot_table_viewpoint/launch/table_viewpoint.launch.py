@@ -39,6 +39,11 @@ def generate_launch_description():
             'database_file',
             default_value=default_database,
         ),
+        DeclareLaunchArgument('input_mode', default_value='topic'),
+        DeclareLaunchArgument(
+            'bbox_topic',
+            default_value='/target_bbox_3d',
+        ),
         DeclareLaunchArgument('use_table_rviz', default_value='true'),
         DeclareLaunchArgument(
             'rviz_config',
@@ -53,6 +58,8 @@ def generate_launch_description():
                 LaunchConfiguration('params_file'),
                 {
                     'database_file': LaunchConfiguration('database_file'),
+                    'input_mode': LaunchConfiguration('input_mode'),
+                    'bbox_topic': LaunchConfiguration('bbox_topic'),
                 },
             ],
         ),

@@ -3,18 +3,28 @@
 This package is intentionally separate from `my_robot_perception` and the
 existing real-navigation launch. It adds no nodes to the normal robot startup.
 
-The planner uses an RViz `Publish Point` click as a search seed, fits a
-horizontal tabletop from the next aligned Orbbec depth frame, constructs a
-known-size 3D box, checks front-center camera viewpoints against the local
-costmap, and sends the selected Nav2 goal once in automatic mode.
+The planner accepts a runtime `vision_msgs/msg/Detection3D` bounding box,
+transforms it to `map`, and uses the received center, orientation, and size to
+generate camera viewpoints. It checks complete tabletop framing and robot
+footprint safety against the global/local costmaps before sending the selected
+Nav2 goal.
 
-The configured desk size is `1.40 x 0.60 x 0.73 m`. Calibration is stored in
-the separate `Test052601_table_viewpoint/tables.yaml` map sidecar. The original
-`Test052601` map is not modified.
+The default input mode is `topic`, listening on `/target_bbox_3d`. It does not
+load the historical `tables.yaml`, so startup alone does not create or send a
+goal. The YAML workflow remains available as an explicit fallback mode.
+Calibration is stored in the separate
+`Test052601_table_viewpoint/tables.yaml` map sidecar; the original map is not
+modified.
 
-With the current level camera mount, a full-height table view requires roughly
-2.3 m of standoff. The default minimum projected fill is therefore 28 percent;
-the planner still prefers the closest fully framed, collision-free candidate.
+Collision safety and complete framing remain hard requirements. Remaining
+candidates receive a weighted score that strongly favors projected area (70%)
+over horizontal centering (10%), vertical centering (8%), costmap clearance
+(10%), and straight-line travel distance (2%). Score scales and weights are configurable in
+`config/table_viewpoint.yaml`.
+Projected area is normalized adaptively: when every valid candidate is below
+the configured area ceiling, the largest current candidate receives full area
+score. This preserves discrimination when the visible tabletop polygon is
+small in absolute pixel area.
 
 ## Run
 
@@ -44,23 +54,92 @@ ros2 launch my_robot_table_viewpoint table_viewpoint.launch.py
 
 The standalone launch opens a dedicated RViz configuration automatically. It
 already contains the map, global/local costmaps, robot, projected scan, table
-viewpoint markers, `/rgbd_debug_image`, and a `Publish Point` tool bound to
-`/clicked_point`. Green candidate markers fit the complete tabletop in the
-camera and are footprint-safe; the blue arrow is the selected goal.
+viewpoint markers, and `/rgbd_debug_image`. Green candidate markers fit the
+complete tabletop in the camera and are footprint-safe; the blue arrow is the
+selected goal.
 
-The default operating mode is automatic: once a valid viewpoint exists and
+The default operating mode is automatic: once a valid 3D bbox arrives and
 Nav2's `bt_navigator` lifecycle node is active, the node submits the goal and
 verifies that Nav2 accepted it. Rejected startup requests are retried. The
-final navigation result is also written to the node log. The saved table's
-blue box and the selected blue goal arrow are displayed automatically; noisy
-candidate dots stay hidden. Set `publish_candidate_markers:=true` in the
-parameter file only when tuning the geometry or costmap filters.
+final navigation result is also written to the node log. The runtime table's
+blue box and selected blue goal arrow are displayed automatically; noisy
+candidate dots stay hidden.
 
-The robot should remain stationary for the click and the following depth
-frame. The planner prefers the depth capture timestamp, but falls back to the
-latest TF when the camera timestamp is a few milliseconds ahead of the
-`map -> base_footprint` stream. This fallback is logged once and avoids losing
-an otherwise valid one-shot calibration.
+## Input modes
+
+Default dynamic bbox mode:
+
+```bash
+ros2 launch my_robot_table_viewpoint table_navigation.launch.py \
+  input_mode:=topic bbox_topic:=/target_bbox_3d
+```
+
+The bbox must have a valid `header.frame_id`, center pose, and positive size.
+Its local X/Y dimensions are normalized so the longer horizontal dimension is
+used as the table long axis. Near-identical repeated detections are ignored;
+meaningful position, yaw, or size updates trigger replanning. A repeated bbox
+also starts a new task when the robot has moved more than 0.35 m away from the
+previous viewpoint. Set `repeat_bbox_retriggers_goal:=false` for continuously
+streaming detectors that should not reclaim navigation after another client
+sends a goal.
+
+## Experimental SAM bbox input
+
+`sam_table_bbox_node` can generate the same `/target_bbox_3d` message from a
+SAM mask plus aligned depth. This is intentionally a separate optional node:
+normal table navigation still works without SAM installed.
+
+First install Meta SAM and download a checkpoint, then launch the node:
+
+```bash
+source /opt/ros/humble/setup.bash
+source ~/ros2_ws/install/setup.bash
+export ROS_DOMAIN_ID=23
+export ROS_LOCALHOST_ONLY=0
+
+ros2 launch my_robot_table_viewpoint sam_table_bbox.launch.py \
+  sam_checkpoint:=/path/to/sam_vit_b_01ec64.pth \
+  sam_device:=cuda
+```
+
+Keep the table visible in the RGB-D camera, then use RViz `Publish Point` to
+click roughly on the visible table. The clicked map point is projected into
+the camera image as SAM's point prompt; the resulting mask is combined with
+depth, fitted into an oriented 3D box in `map`, and published to
+`/target_bbox_3d`. Debug outputs are `/sam_table_mask/debug` and
+`/sam_table_bbox_marker`.
+
+`sam3_table_bbox_node` is a second experimental input source that uses SAM3
+open-vocabulary text segmentation instead of a click prompt. It runs only when
+the service is called:
+
+```bash
+source /opt/ros/humble/setup.bash
+source ~/ros2_ws/install/setup.bash
+export ROS_DOMAIN_ID=23
+export ROS_LOCALHOST_ONLY=0
+
+ros2 launch my_robot_table_viewpoint sam3_table_bbox.launch.py \
+  sam3_model:=/path/to/sam3.pt \
+  sam3_prompt:="office desk" \
+  sam3_device:=cuda
+```
+
+Then trigger one detection from the latest RGB-D frame:
+
+```bash
+ros2 service call /detect_sam3_table std_srvs/srv/Trigger {}
+```
+
+The node publishes `/target_bbox_3d`, `/sam3_table_mask/debug`, and
+`/sam3_table_bbox_marker`.
+
+Load the historical YAML explicitly:
+
+```bash
+ros2 launch my_robot_table_viewpoint table_navigation.launch.py \
+  input_mode:=yaml
+```
 
 Viewpoint endpoints are checked against `/global_costmap/costmap`, so a saved
 table remains usable when it is outside the robot's 5 x 5 m rolling local

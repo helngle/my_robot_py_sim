@@ -1,0 +1,38 @@
+<!-- Long-range profile preserves the original forward-preferring behavior and
+     explicitly selects the long-distance goal checker. -->
+<root main_tree_to_execute="MainTree">
+  <BehaviorTree ID="MainTree">
+    <RecoveryNode number_of_retries="6" name="NavigateLongRecovery">
+      <PipelineSequence>
+        <RateController hz="1.0" name="RateControllerComputeLongPath">
+          <RecoveryNode number_of_retries="1" name="RecoveryComputeLongPath">
+            <Fallback name="FallbackComputeLongPath">
+              <ReactiveSequence name="CheckIfNewLongPathNeeded">
+                <Inverter>
+                  <GlobalUpdatedGoal/>
+                </Inverter>
+                <IsPathValid path="{path}"/>
+              </ReactiveSequence>
+              <ComputePathToPose goal="{goal}" path="{path}" planner_id="GridBased"/>
+            </Fallback>
+            <ClearEntireCostmap name="ClearGlobalCostmap-Long" service_name="global_costmap/clear_entirely_global_costmap"/>
+          </RecoveryNode>
+        </RateController>
+        <RecoveryNode number_of_retries="1" name="RecoveryFollowLongPath">
+          <FollowPath path="{path}" controller_id="FollowPath" goal_checker_id="LongGoalChecker"/>
+          <ClearEntireCostmap name="ClearLocalCostmap-Long" service_name="local_costmap/clear_entirely_local_costmap"/>
+        </RecoveryNode>
+      </PipelineSequence>
+      <ReactiveFallback name="FallbackLongRecoveries">
+        <GoalUpdated/>
+        <RoundRobin name="LongRecoveryActions">
+          <Sequence name="LongClearingActions">
+            <ClearEntireCostmap name="ClearLocalCostmap-LongSubtree" service_name="local_costmap/clear_entirely_local_costmap"/>
+            <ClearEntireCostmap name="ClearGlobalCostmap-LongSubtree" service_name="global_costmap/clear_entirely_global_costmap"/>
+          </Sequence>
+          <Wait name="WaitLongRecovery" wait_duration="5"/>
+        </RoundRobin>
+      </ReactiveFallback>
+    </RecoveryNode>
+  </BehaviorTree>
+</root>

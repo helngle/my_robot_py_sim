@@ -44,20 +44,16 @@ Visualization Manager:
       Visual Enabled: true
       Collision Enabled: false
     - Class: rviz_default_plugins/MarkerArray
-      Name: TableViewpointMarkers
+      Name: SafetyShell
       Enabled: true
       Topic:
         Depth: 5
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /table_viewpoint_markers
+        Value: /safety_shell_array
       Namespaces:
-        table_best_goal: true
-        table_box: true
-        table_candidates: true
-        table_footprint: true
-        table_search: true
+        mobile_manipulator_safety: true
       Queue Size: 100
     - Class: rviz_default_plugins/Marker
       Name: BaseFootprint
@@ -119,7 +115,7 @@ Visualization Manager:
       Color Transformer: RGB8
       Use Fixed Frame: true
     - Class: rviz_default_plugins/Image
-      Name: RgbCamera
+      Name: OrbbecColorImage
       Enabled: true
       Max Value: 1
       Median window: 5
@@ -132,39 +128,11 @@ Visualization Manager:
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Best Effort
-        Value: /rgbd_debug_image
+        Value: /camera/color/image_raw
       Value: true
-    - Class: rviz_default_plugins/Image
-      Name: Sam3Segmentation
-      Enabled: true
-      Max Value: 1
-      Median window: 5
-      Min Value: 0
-      Normalize Range: true
-      Queue Size: 2
-      Transport Hint: raw
-      Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        History Policy: Keep Last
-        Reliability Policy: Best Effort
-        Value: /sam3_table_mask/debug
-      Value: true
-    - Class: rviz_default_plugins/Marker
-      Name: Sam3TableBBox
-      Enabled: true
-      Topic:
-        Depth: 5
-        Durability Policy: Volatile
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-        Value: /sam3_table_bbox_marker
-      Namespaces:
-        sam_table_bbox: true
-      Queue Size: 100
     - Class: rviz_default_plugins/Marker
       Name: RgbdGoalMarker
-      Enabled: false
+      Enabled: true
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -325,7 +293,20 @@ Visualization Manager:
     Frame Rate: 30
   Tools:
     - Class: rviz_default_plugins/MoveCamera
-    - Class: nav2_rviz_plugins/GoalTool
+    - Class: rviz_default_plugins/SetInitialPose
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /initialpose
+    - Class: rviz_default_plugins/SetGoal
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /hybrid_goal_pose
     - Class: rviz_default_plugins/Interact
       Hide Inactive Objects: true
     - Class: rviz_default_plugins/Select
@@ -353,9 +334,7 @@ Window Geometry:
   Hide Right Dock: false
   Navigation 2:
     collapsed: false
-  RgbCamera:
-    collapsed: false
-  Sam3Segmentation:
+  RgbdDebugImage:
     collapsed: false
   Selection:
     collapsed: false

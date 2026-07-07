@@ -36,7 +36,10 @@ def generate_launch_description():
     use_nav2 = LaunchConfiguration('use_nav2')
     use_scan_conversion = LaunchConfiguration('use_scan_conversion')
     use_orbbec_camera = LaunchConfiguration('use_orbbec_camera')
+    use_rgbd_goal = LaunchConfiguration('use_rgbd_goal')
     use_table_rviz = LaunchConfiguration('use_table_rviz')
+    input_mode = LaunchConfiguration('input_mode')
+    bbox_topic = LaunchConfiguration('bbox_topic')
 
     navigation = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(real_navigation_launch),
@@ -48,7 +51,7 @@ def generate_launch_description():
             'use_scan_conversion': use_scan_conversion,
             'use_orbbec_camera': use_orbbec_camera,
             'use_orbbec_pointcloud': 'false',
-            'use_rgbd_goal': 'true',
+            'use_rgbd_goal': use_rgbd_goal,
             'rgbd_goal_auto_send': 'false',
             'rgbd_enable_target_localization': 'false',
             'use_rviz': 'false',
@@ -58,6 +61,8 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(table_viewpoint_launch),
         launch_arguments={
             'use_table_rviz': use_table_rviz,
+            'input_mode': input_mode,
+            'bbox_topic': bbox_topic,
         }.items(),
     )
 
@@ -68,7 +73,13 @@ def generate_launch_description():
         DeclareLaunchArgument('use_nav2', default_value='true'),
         DeclareLaunchArgument('use_scan_conversion', default_value='true'),
         DeclareLaunchArgument('use_orbbec_camera', default_value='true'),
+        DeclareLaunchArgument('use_rgbd_goal', default_value='true'),
         DeclareLaunchArgument('use_table_rviz', default_value='true'),
+        DeclareLaunchArgument('input_mode', default_value='topic'),
+        DeclareLaunchArgument(
+            'bbox_topic',
+            default_value='/target_bbox_3d',
+        ),
         SetEnvironmentVariable('ROS_DOMAIN_ID', '23'),
         SetEnvironmentVariable('ROS_LOCALHOST_ONLY', '0'),
         navigation,

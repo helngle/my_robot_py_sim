@@ -4,7 +4,7 @@ project(my_robot_navigation)
 find_package(ament_cmake REQUIRED)
 
 install(
-  DIRECTORY config
+  DIRECTORY config behavior_trees
   DESTINATION share/${PROJECT_NAME}
 )
 

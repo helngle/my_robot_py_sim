@@ -2,7 +2,12 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, SetEnvironmentVariable, TimerAction
+from launch.actions import (
+    DeclareLaunchArgument,
+    IncludeLaunchDescription,
+    SetEnvironmentVariable,
+    TimerAction,
+)
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PythonExpression
@@ -23,18 +28,35 @@ def generate_launch_description():
     pkg_livox_driver = get_package_share_directory('livox_ros_driver2')
     pkg_orbbec_camera = get_package_share_directory('orbbec_camera')
 
-    urdf_file = os.path.join(pkg_description, 'urdf', 'mobile_manipulator.urdf')
+    urdf_file = os.path.join(
+        pkg_description,
+        'urdf',
+        'mobile_manipulator.urdf',
+    )
     rviz_config = os.path.join(pkg_description, 'rviz', 'view_robot.rviz')
-    nav2_config = os.path.join(pkg_navigation, 'config', 'real_nav2_no_odom_mppi.yaml')
+    nav2_config = os.path.join(
+        pkg_navigation,
+        'config',
+        'real_nav2_no_odom_mppi_hybrid_distance.yaml',
+    )
     default_nav2_params = nav2_config
     forward_only_nav_bt = os.path.join(
         pkg_navigation,
         'behavior_trees',
-        'navigate_forward_only_replanning_if_path_invalid.xml',
+        'navigate_long_forward_replanning_if_path_invalid.xml',
     )
     routes_file = os.path.join(pkg_navigation, 'config', 'routes.yaml')
-    livox_config = os.path.join(pkg_livox_driver, 'config', 'MID360s_config.json')
-    default_map = os.path.join(pkg_maps, 'maps', 'Test052601', 'Test052601.yaml')
+    livox_config = os.path.join(
+        pkg_livox_driver,
+        'config',
+        'MID360s_config.json',
+    )
+    default_map = os.path.join(
+        pkg_maps,
+        'maps',
+        'Test052601',
+        'Test052601.yaml',
+    )
     default_rgbd_params = os.path.join(
         pkg_perception,
         'config',
@@ -52,7 +74,9 @@ def generate_launch_description():
     use_rviz = LaunchConfiguration('use_rviz')
     use_map = LaunchConfiguration('use_map')
     use_base_driver = LaunchConfiguration('use_base_driver')
-    use_joint_state_publisher = LaunchConfiguration('use_joint_state_publisher')
+    use_joint_state_publisher = LaunchConfiguration(
+        'use_joint_state_publisher'
+    )
     cmd_vel_enabled = LaunchConfiguration('cmd_vel_enabled')
     cmd_vel_topic = LaunchConfiguration('cmd_vel_topic')
     cmd_vel_max_linear_x = LaunchConfiguration('cmd_vel_max_linear_x')
@@ -97,7 +121,9 @@ def generate_launch_description():
     lidar_source = LaunchConfiguration('lidar_source')
     pose_topic = LaunchConfiguration('pose_topic')
     laser_cloud_topic = LaunchConfiguration('laser_cloud_topic')
-    stamped_laser_cloud_topic = LaunchConfiguration('stamped_laser_cloud_topic')
+    stamped_laser_cloud_topic = LaunchConfiguration(
+        'stamped_laser_cloud_topic'
+    )
     scan_topic = LaunchConfiguration('scan_topic')
     use_livox_lidar = PythonExpression(["'", lidar_source, "' == 'livox'"])
     selected_laser_cloud_topic = PythonExpression([
@@ -392,16 +418,21 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
-        DeclareLaunchArgument('use_rviz', default_value='true'),
+        DeclareLaunchArgument('use_rviz', default_value='false'),
         DeclareLaunchArgument('use_map', default_value='true'),
         DeclareLaunchArgument('use_base_driver', default_value='true'),
-        DeclareLaunchArgument('use_joint_state_publisher', default_value='true'),
+        DeclareLaunchArgument(
+            'use_joint_state_publisher',
+            default_value='true',
+        ),
         DeclareLaunchArgument('use_scan_conversion', default_value='true'),
         DeclareLaunchArgument('use_nav2', default_value='true'),
         DeclareLaunchArgument(
             'use_orbbec_camera',
             default_value='false',
-            description='Start the Orbbec Gemini 435Le camera and publish its base TF.',
+            description=(
+                'Start the Orbbec Gemini 435Le camera and publish its base TF.'
+            ),
         ),
         DeclareLaunchArgument('use_orbbec_pointcloud', default_value='false'),
         DeclareLaunchArgument('use_rgbd_goal', default_value='false'),
@@ -443,10 +474,18 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'lidar_source',
             default_value='vmr',
-            description='Point cloud source for /scan conversion: vmr or livox.',
+            description=(
+                'Point cloud source for /scan conversion: vmr or livox.'
+            ),
         ),
-        DeclareLaunchArgument('pose_topic', default_value='/vmr_base_bridge/pose'),
-        DeclareLaunchArgument('laser_cloud_topic', default_value='/vmr_base_bridge/laser/points'),
+        DeclareLaunchArgument(
+            'pose_topic',
+            default_value='/vmr_base_bridge/pose',
+        ),
+        DeclareLaunchArgument(
+            'laser_cloud_topic',
+            default_value='/vmr_base_bridge/laser/points',
+        ),
         DeclareLaunchArgument(
             'stamped_laser_cloud_topic',
             default_value='/selected_lidar/points_stamped',

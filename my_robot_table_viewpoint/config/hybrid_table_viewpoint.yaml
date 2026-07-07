@@ -39,9 +39,11 @@ table_viewpoint_planner:
     travel_distance_scale_m: 8.0
 
     max_bbox_tilt_deg: 10.0
-    bbox_position_tolerance_m: 0.03
-    bbox_size_tolerance_m: 0.03
-    bbox_yaw_tolerance_rad: 0.03
+    # Every SAM3 post-arrival result must produce a fresh viewpoint, even when
+    # the fitted 3D box is nearly identical to the previous detection.
+    bbox_position_tolerance_m: -1.0
+    bbox_size_tolerance_m: -1.0
+    bbox_yaw_tolerance_rad: -1.0
     repeat_bbox_retriggers_goal: true
     repeat_bbox_retrigger_distance_m: 0.35
 
@@ -51,10 +53,36 @@ table_viewpoint_planner:
     approach_speed_limit_mps: 0.15
     speed_limit_topic: /speed_limit
 
-    auto_send_goal: true
+    # The hybrid orchestrator owns goal submission and chooses the controller.
+    auto_send_goal: false
     publish_table_marker: true
     publish_goal_marker: true
     publish_candidate_markers: false
+
+hybrid_viewpoint_orchestrator:
+  ros__parameters:
+    map_frame: map
+    base_frame: base_footprint
+    viewpoint_goal_topic: /table_viewpoint_goal
+    bbox_topic: /target_bbox_3d
+    navigate_action: /navigate_to_pose
+    sam3_detection_service: /detect_sam3_table
+
+    # Initial goals at or above this distance use the original long-range
+    # RotationShim + forward-preferring MPPI profile.
+    distance_split_m: 1.5
+
+    # After any initial goal succeeds, wait for the chassis to settle, trigger
+    # SAM3 again, and execute up to three low-speed corrections.
+    enable_refinement: true
+    refinement_mode: detection
+    settle_time_s: 1.0
+    detection_timeout_s: 8.0
+    max_refinement_attempts: 3
+    max_refinement_step_m: 0.20
+    max_refinement_yaw_rad: 0.20
+    fine_position_tolerance_m: 0.025
+    fine_yaw_tolerance_rad: 0.035
 
 sam_table_bbox_node:
   ros__parameters:

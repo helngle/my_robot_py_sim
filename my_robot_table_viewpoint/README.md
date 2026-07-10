@@ -29,13 +29,26 @@ small in absolute pixel area.
 ## Run
 
 The normal real-robot workflow is available as one combined command. It uses
-the separate table map, starts Livox, Orbbec, Nav2, the viewpoint planner, and
-the dedicated RViz configuration:
+the separate table map, starts Livox, Orbbec, the current
+`real_navigation_mppi.launch.py` Nav2 backbone, the viewpoint planner, and the
+dedicated RViz configuration:
 
 ```bash
 source /opt/ros/humble/setup.bash
 source ~/ros2_ws/install/setup.bash
 ros2 launch my_robot_table_viewpoint table_navigation.launch.py
+```
+
+The SAM3 workflow uses the same navigation backbone and starts the detector in
+the same launch:
+
+```bash
+source /opt/ros/humble/setup.bash
+source ~/ros2_ws/install/setup.bash
+ros2 launch my_robot_table_viewpoint sam3_table_navigation.launch.py \
+  sam3_model:=/home/jensen/ros2_ws/sam3.pt \
+  sam3_prompt:="office desk" \
+  sam3_device:=cuda
 ```
 
 The lower-level standalone launch below remains available when the existing
@@ -83,13 +96,10 @@ previous viewpoint. Set `repeat_bbox_retriggers_goal:=false` for continuously
 streaming detectors that should not reclaim navigation after another client
 sends a goal.
 
-## Experimental SAM bbox input
+## SAM3 bbox input
 
-`sam_table_bbox_node` can generate the same `/target_bbox_3d` message from a
-SAM mask plus aligned depth. This is intentionally a separate optional node:
-normal table navigation still works without SAM installed.
-
-First install Meta SAM and download a checkpoint, then launch the node:
+`sam3_table_bbox_node` generates `/target_bbox_3d` from SAM3 open-vocabulary
+text segmentation plus aligned depth. It runs only when the service is called:
 
 ```bash
 source /opt/ros/humble/setup.bash
@@ -97,29 +107,7 @@ source ~/ros2_ws/install/setup.bash
 export ROS_DOMAIN_ID=23
 export ROS_LOCALHOST_ONLY=0
 
-ros2 launch my_robot_table_viewpoint sam_table_bbox.launch.py \
-  sam_checkpoint:=/path/to/sam_vit_b_01ec64.pth \
-  sam_device:=cuda
-```
-
-Keep the table visible in the RGB-D camera, then use RViz `Publish Point` to
-click roughly on the visible table. The clicked map point is projected into
-the camera image as SAM's point prompt; the resulting mask is combined with
-depth, fitted into an oriented 3D box in `map`, and published to
-`/target_bbox_3d`. Debug outputs are `/sam_table_mask/debug` and
-`/sam_table_bbox_marker`.
-
-`sam3_table_bbox_node` is a second experimental input source that uses SAM3
-open-vocabulary text segmentation instead of a click prompt. It runs only when
-the service is called:
-
-```bash
-source /opt/ros/humble/setup.bash
-source ~/ros2_ws/install/setup.bash
-export ROS_DOMAIN_ID=23
-export ROS_LOCALHOST_ONLY=0
-
-ros2 launch my_robot_table_viewpoint sam3_table_bbox.launch.py \
+ros2 launch my_robot_table_viewpoint sam3_table_navigation.launch.py \
   sam3_model:=/path/to/sam3.pt \
   sam3_prompt:="office desk" \
   sam3_device:=cuda

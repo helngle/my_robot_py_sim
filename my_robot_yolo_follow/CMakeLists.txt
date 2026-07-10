@@ -1,10 +1,15 @@
 cmake_minimum_required(VERSION 3.8)
-project(my_robot_navigation)
+project(my_robot_yolo_follow)
 
 find_package(ament_cmake REQUIRED)
 
 install(
-  DIRECTORY config behavior_trees scripts
+  DIRECTORY launch
+  DESTINATION share/${PROJECT_NAME}
+)
+
+install(
+  FILES README.md
   DESTINATION share/${PROJECT_NAME}
 )
 

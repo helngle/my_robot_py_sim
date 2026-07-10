@@ -2,7 +2,7 @@
   Forward-only real-robot navigation:
   - keep following the current global path while it remains valid;
   - replan when the goal changes or an obstacle invalidates the path;
-  - recover with costmap clearing, spinning, and waiting, never backing up.
+  - recover with costmap clearing and waiting, never backing up or spinning.
 -->
 <root main_tree_to_execute="MainTree">
   <BehaviorTree ID="MainTree">
@@ -34,7 +34,6 @@
             <ClearEntireCostmap name="ClearLocalCostmap-Subtree" service_name="local_costmap/clear_entirely_local_costmap"/>
             <ClearEntireCostmap name="ClearGlobalCostmap-Subtree" service_name="global_costmap/clear_entirely_global_costmap"/>
           </Sequence>
-          <Spin name="SpinRecovery" spin_dist="1.57"/>
           <Wait name="WaitRecovery" wait_duration="5"/>
         </RoundRobin>
       </ReactiveFallback>

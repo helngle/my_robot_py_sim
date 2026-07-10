@@ -56,38 +56,6 @@ table_viewpoint_planner:
     publish_goal_marker: true
     publish_candidate_markers: false
 
-sam_table_bbox_node:
-  ros__parameters:
-    color_topic: /camera/color/image_raw
-    depth_topic: /camera/depth/image_raw
-    camera_info_topic: /camera/color/camera_info
-    clicked_point_topic: /clicked_point
-    bbox_topic: /target_bbox_3d
-    debug_image_topic: /sam_table_mask/debug
-    marker_topic: /sam_table_bbox_marker
-    target_frame: map
-
-    # First experimental version uses Meta segment-anything:
-    #   pip install git+https://github.com/facebookresearch/segment-anything.git
-    # Then pass sam_checkpoint:=/path/to/sam_vit_b_01ec64.pth at launch.
-    sam_checkpoint: ''
-    sam_model_type: vit_b
-    sam_device: cuda
-
-    min_depth_m: 0.25
-    max_depth_m: 6.0
-    min_mask_area_px: 500
-    max_points_for_fit: 3000
-    depth_percentile_low: 5.0
-    depth_percentile_high: 95.0
-    xy_percentile_low: 2.0
-    xy_percentile_high: 98.0
-    min_box_length_m: 0.20
-    min_box_width_m: 0.20
-    min_box_height_m: 0.05
-    bbox_id: sam_table
-    publish_debug_image: true
-
 sam3_table_bbox_node:
   ros__parameters:
     color_topic: /camera/color/image_raw

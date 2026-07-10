@@ -41,16 +41,8 @@ setup(
                 'my_robot_table_viewpoint.table_viewpoint_planner:main'
             ),
             (
-                'sam_table_bbox_node = '
-                'my_robot_table_viewpoint.sam_table_bbox_node:main'
-            ),
-            (
                 'sam3_table_bbox_node = '
                 'my_robot_table_viewpoint.sam3_table_bbox_node:main'
-            ),
-            (
-                'hybrid_viewpoint_orchestrator = '
-                'my_robot_table_viewpoint.hybrid_viewpoint_orchestrator:main'
             ),
         ],
     },

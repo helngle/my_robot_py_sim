@@ -83,7 +83,7 @@ Visualization Manager:
       Queue Size: 100
     - Class: rviz_default_plugins/PointCloud2
       Name: LidarPoints
-      Enabled: true
+      Enabled: false
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -115,7 +115,7 @@ Visualization Manager:
       Color Transformer: RGB8
       Use Fixed Frame: true
     - Class: rviz_default_plugins/Image
-      Name: RgbdDebugImage
+      Name: RgbCameraImage
       Enabled: true
       Max Value: 1
       Median window: 5
@@ -128,7 +128,7 @@ Visualization Manager:
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Best Effort
-        Value: /rgbd_debug_image
+        Value: /camera/color/image_raw
       Value: true
     - Class: rviz_default_plugins/Marker
       Name: RgbdGoalMarker
@@ -321,7 +321,7 @@ Window Geometry:
   Hide Right Dock: false
   Navigation 2:
     collapsed: false
-  RgbdDebugImage:
+  RgbCameraImage:
     collapsed: false
   Selection:
     collapsed: false

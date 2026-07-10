@@ -75,7 +75,7 @@ controller_server:
     min_x_velocity_threshold: 0.001
     min_y_velocity_threshold: 0.001
     min_theta_velocity_threshold: 0.001
-    failure_tolerance: 0.3
+    failure_tolerance: 2.0
     progress_checker_plugin: progress_checker
     goal_checker_plugins: ["goal_checker"]
     controller_plugins: ["FollowPath"]
@@ -92,37 +92,27 @@ controller_server:
       yaw_goal_tolerance: 0.05
 
     FollowPath:
-      plugin: nav2_rotation_shim_controller::RotationShimController
-      primary_controller: nav2_mppi_controller::MPPIController
-      angular_dist_threshold: 0.80
-      angular_disengage_threshold: 0.32
-      forward_sampling_distance: 0.30
-      rotate_to_heading_angular_vel: 0.50
-      max_angular_accel: 1.5
-      simulate_ahead_time: 1.0
-      rotate_to_goal_heading: false
-      closed_loop: true
-
-      time_steps: 30
+      plugin: nav2_mppi_controller::MPPIController
+      time_steps: 36
       model_dt: 0.10
-      batch_size: 1200
+      batch_size: 1600
       iteration_count: 1
-      vx_std: 0.18
-      vy_std: 0.04
-      wz_std: 0.32
-      vx_max: 0.40
-      vx_min: -0.08
-      vy_max: 0.09
-      wz_max: 0.70
+      vx_std: 0.14
+      vy_std: 0.06
+      wz_std: 0.24
+      vx_max: 0.24
+      vx_min: -0.048
+      vy_max: 0.075
+      wz_max: 0.42
       motion_model: "Omni"
       prune_distance: 1.5
       transform_tolerance: 1.0
       temperature: 0.4
       gamma: 0.025
-      retry_attempt_limit: 1
+      retry_attempt_limit: 3
       visualize: false
       reset_period: 1.0
-      regenerate_noises: false
+      regenerate_noises: true
       TrajectoryVisualizer:
         trajectory_step: 5
         time_step: 3
@@ -134,7 +124,7 @@ controller_server:
       CostCritic:
         enabled: true
         cost_power: 1
-        cost_weight: 4.5
+        cost_weight: 6.0
         critical_cost: 300.0
         consider_footprint: true
         collision_cost: 1000000.0
@@ -153,33 +143,33 @@ controller_server:
       PathFollowCritic:
         enabled: true
         cost_power: 1
-        cost_weight: 7.0
+        cost_weight: 5.0
         offset_from_furthest: 5
         threshold_to_consider: 0.5
       PathAlignCritic:
         enabled: true
         cost_power: 1
-        cost_weight: 26.0
+        cost_weight: 6.0
         offset_from_furthest: 20
         trajectory_point_step: 2
         threshold_to_consider: 0.5
       PathAngleCritic:
         enabled: true
         cost_power: 1
-        cost_weight: 48.0
+        cost_weight: 8.0
         offset_from_furthest: 4
-        threshold_to_consider: 0.5
-        max_angle_to_furthest: 0.32
+        threshold_to_consider: 1.2
+        max_angle_to_furthest: 0.65
         forward_preference: true
       PreferForwardCritic:
         enabled: true
         cost_power: 1
-        cost_weight: 10.0
-        threshold_to_consider: 1.0
+        cost_weight: 6.0
+        threshold_to_consider: 1.2
       TwirlingCritic:
-        enabled: false
+        enabled: true
         cost_power: 1
-        cost_weight: 0.0
+        cost_weight: 10.0
 
 local_costmap:
   local_costmap:
@@ -190,8 +180,8 @@ local_costmap:
       update_frequency: 8.0
       publish_frequency: 4.0
       rolling_window: true
-      width: 5
-      height: 5
+      width: 4
+      height: 4
       resolution: 0.05
       footprint: "[[0.400, 0.350], [0.400, -0.350], [-0.400, -0.350], [-0.400, 0.350]]"
       plugins: ["obstacle_layer", "inflation_layer"]
@@ -207,9 +197,9 @@ local_costmap:
           data_type: LaserScan
           observation_persistence: 0.0
           inf_is_valid: true
-          raytrace_max_range: 8.0
+          raytrace_max_range: 4.0
           raytrace_min_range: 0.05
-          obstacle_max_range: 7.5
+          obstacle_max_range: 3.0
           obstacle_min_range: 0.05
       inflation_layer:
         plugin: nav2_costmap_2d::InflationLayer
@@ -261,10 +251,15 @@ planner_server:
     expected_planner_frequency: 2.0
     planner_plugins: ["GridBased"]
     GridBased:
-      plugin: nav2_navfn_planner/NavfnPlanner
+      plugin: nav2_smac_planner/SmacPlanner2D
       tolerance: 0.5
-      use_astar: true
+      downsample_costmap: false
       allow_unknown: false
+      max_iterations: 1000000
+      max_on_approach_iterations: 1000
+      max_planning_time: 2.0
+      cost_travel_multiplier: 2.0
+      use_final_approach_orientation: false
 
 smoother_server:
   ros__parameters:
@@ -297,9 +292,9 @@ behavior_server:
     robot_base_frame: base_footprint
     transform_tolerance: 1.0
     simulate_ahead_time: 2.0
-    max_rotational_vel: 0.70
-    min_rotational_vel: 0.12
-    rotational_acc_lim: 1.40
+    max_rotational_vel: 0.42
+    min_rotational_vel: 0.072
+    rotational_acc_lim: 0.84
 
 waypoint_follower:
   ros__parameters:
@@ -318,11 +313,11 @@ velocity_smoother:
     smoothing_frequency: 30.0
     scale_velocities: true
     feedback: OPEN_LOOP
-    max_velocity: [0.40, 0.09, 0.70]
-    min_velocity: [-0.08, -0.09, -0.70]
-    max_accel: [0.75, 0.65, 1.50]
-    max_decel: [-0.75, -0.65, -1.50]
+    max_velocity: [0.24, 0.075, 0.42]
+    min_velocity: [-0.048, -0.075, -0.42]
+    max_accel: [0.45, 0.39, 0.90]
+    max_decel: [-0.45, -0.39, -0.90]
     odom_topic: /estimated_odom
     odom_duration: 0.2
-    deadband_velocity: [0.0, 0.0, 0.03]
+    deadband_velocity: [0.025, 0.025, 0.05]
     velocity_timeout: 1.0

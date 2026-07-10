@@ -1,66 +1,65 @@
 # ROS 2 Mobile Manipulator
 
-ROS 2 Humble mobile-manipulator workspace containing simulation, real-robot
-navigation, route tools, and the VMR chassis SDK bridge.
+[中文文档](README_zh.md)
 
-## Repository Layout
+ROS 2 Humble workspace for a mobile manipulator with real-robot navigation,
+YOLO RGB-D following, SAM3 table viewpoint planning, simulation tools, and a
+VMR chassis SDK bridge.
 
-```text
-src/
-|-- my_robot_bringup/     # Main launch entry points
-|-- my_robot_description/ # URDF, RViz2, and simulation assets
-|-- my_robot_maps/        # Versioned map assets
-|-- my_robot_navigation/  # Nav2, route, and safety configuration
-|-- my_robot_localization/ # Pose, odometry, and TF helper nodes
-|-- my_robot_perception/  # Point cloud and planning-map helper nodes
-|-- my_robot_tools/       # Route, marker, and operator helper tools
-|-- vmr_base_bridge/      # ROS 2 bridge for the VMR chassis SDK
-|-- livox_ros_driver2/    # ROS 2 driver for the Livox MID360 LiDAR
-|-- OrbbecSDK_ROS2/       # ROS 2 driver for the Orbbec Gemini 435Le camera
-|-- legacy/               # Ignored legacy package snapshots
-`-- pose_estimator/       # Optional pose interpolation experiments
-```
+## Main Workflows
 
-The primary real-robot navigation path is:
+All real-robot workflows share the same navigation backbone:
 
 ```text
-VMR SDK pose + VMR or Livox LiDAR point cloud
+VMR SDK pose + Livox/VMR point cloud
         |
         v
-map -> base_footprint, /estimated_odom
-PointCloud2 restamp -> /scan
+/estimated_pose + /estimated_odom + map -> base_footprint
+PointCloud2 -> /scan
         |
         v
-Nav2 global planner + MPPI omni controller
+Nav2 SmacPlanner2D + MPPI Omni controller
         |
         v
 /cmd_vel -> vmr_base_bridge -> physical chassis
 ```
 
-The physical base is approximately `0.70 m x 0.60 m`. The current Nav2 hard
-collision footprint is an expanded `0.80 m x 0.70 m` rectangle. The MPPI
-configuration keeps omni-directional motion available, but strongly prefers
-aligning the vehicle front with the route and moving forward. Local and global
-costmaps use a `0.45 m` inflation radius.
+The shared entry point is
+`my_robot_bringup/launch/real_navigation_mppi.launch.py`. YOLO following and
+SAM3 table navigation include this launch file, so changes to
+`my_robot_navigation/config/real_nav2_no_odom_mppi.yaml` affect all three
+workflows unless another `nav2_params_file` is supplied explicitly.
 
-The default real launch still uses the VMR SDK LiDAR. Pass
-`lidar_source:=livox` to use the Livox MID360 instead. Livox points are
-converted to a 2D `/scan` for Nav2 using a filtered height band:
+The default stack is pure MPPI. It does not use the archived hybrid,
+distance-split, or RotationShim controllers. Its behavior tree clears
+costmaps and waits during recovery; loading the Nav2 spin plugin does not mean
+that Spin recovery is executed.
+
+## Repository Layout
 
 ```text
-min_height: 0.10 m
-max_height: 1.00 m
-range_min: 0.45 m
-range_max: 20.0 m
+src/
+|-- my_robot_bringup/        # Shared real and simulation launch entry points
+|-- my_robot_navigation/     # Nav2, behavior tree, route, and safety config
+|-- my_robot_description/    # URDF, RViz2, and simulation assets
+|-- my_robot_localization/   # SDK pose, odometry, and TF helpers
+|-- my_robot_perception/     # RGB-D and point-cloud processing nodes
+|-- my_robot_yolo_follow/    # YOLO RGB-D follow workflow
+|-- my_robot_table_viewpoint/# SAM3 detection and table viewpoint workflow
+|-- my_robot_maps/           # Versioned maps
+|-- my_robot_tools/          # Route, marker, and operator tools
+|-- vmr_base_bridge/         # VMR SDK ROS 2 bridge
+|-- livox_ros_driver2/       # Livox MID360 ROS 2 driver
+`-- OrbbecSDK_ROS2/          # Orbbec Gemini 435Le ROS 2 driver
 ```
 
-This filters floor returns and near-field self hits before projecting the 3D
-point cloud into the 2D costmaps.
+Older hybrid and distance-split implementations are archived outside the Git
+repository under `~/ros2_ws/archive/current_main_chain_backup_20260709` and
+are not part of the default startup path.
 
 ## Build
 
-ROS 2 Humble uses Python 3.10. If Anaconda is active, force the system Python
-when building:
+ROS 2 Humble uses Python 3.10. If Anaconda is active, force the system Python:
 
 ```bash
 cd ~/ros2_ws
@@ -70,9 +69,8 @@ PATH=/usr/bin:/bin:$PATH colcon build --symlink-install \
 source install/setup.bash
 ```
 
-The Livox ROS driver depends on Livox-SDK2 installed into `/usr/local`.
-The SDK source is kept outside the ROS 2 workspace under `~/vendor` because it
-is not a ROS package. Install it once before building `livox_ros_driver2`:
+`livox_ros_driver2` requires Livox-SDK2 installed under `/usr/local`. Keep its
+source outside the ROS workspace:
 
 ```bash
 mkdir -p ~/vendor
@@ -86,103 +84,142 @@ sudo make install
 sudo ldconfig
 ```
 
-If you only need to build the Livox ROS driver and do not need lint checks:
+## Environment
+
+Use the following environment in each terminal:
 
 ```bash
-cd ~/ros2_ws
 source /opt/ros/humble/setup.bash
-PATH=/usr/bin:/bin:$PATH colcon build --packages-select livox_ros_driver2 \
-  --cmake-args -DPython3_EXECUTABLE=/usr/bin/python3 -DBUILD_TESTING=OFF
-source install/setup.bash
-```
-
-## Quick Start
-
-Simulation with Gazebo, SLAM, and RViz2:
-
-```bash
-cd ~/ros2_ws
-source install/setup.bash
-ros2 launch my_robot_bringup sim_navigation.launch.py
-```
-
-Real robot with the MPPI omni controller:
-
-```bash
-cd ~/ros2_ws
-source install/setup.bash
+source ~/ros2_ws/install/setup.bash
 export ROS_DOMAIN_ID=23
 export ROS_LOCALHOST_ONLY=0
-
-ros2 launch my_robot_bringup real_navigation_mppi.launch.py
 ```
 
-Real robot using Livox MID360 for obstacle sensing:
+## Normal Navigation
 
-```bash
-cd ~/ros2_ws
-source /opt/ros/humble/setup.bash
-source install/setup.bash
-export ROS_DOMAIN_ID=23
-export ROS_LOCALHOST_ONLY=0
-
-ros2 launch my_robot_bringup real_navigation_mppi.launch.py \
-  lidar_source:=livox
-```
-
-Real robot with Livox and the Orbbec Gemini 435Le camera:
+Livox is the default LiDAR. The Orbbec camera and RGB-D goal finder remain off
+for normal navigation:
 
 ```bash
 ros2 launch my_robot_bringup real_navigation_mppi.launch.py \
   lidar_source:=livox \
-  use_orbbec_camera:=true
+  use_orbbec_camera:=false \
+  use_rgbd_goal:=false \
+  use_rviz:=true
 ```
 
-The camera defaults to `640x400 @ 10 FPS`. Override color or depth resolution
-with launch arguments such as `orbbec_color_width:=1280`,
-`orbbec_color_height:=800`, and `orbbec_color_fps:=10`.
+Use `lidar_source:=vmr` to select the VMR SDK point cloud. Override the saved
+map with `map:=/absolute/path/to/map.yaml`.
 
-Useful Livox checks:
+The Livox conversion is intentionally lightweight: a one-degree scan is built
+from the `0.10-0.80 m` height band with a maximum range of `10 m`. Normal RViz
+does not display the raw Livox cloud, reducing CPU and GPU load.
+
+## YOLO RGB-D Follow
 
 ```bash
-ros2 topic info /livox/lidar
+ros2 launch my_robot_yolo_follow yolo_rgbd_navigation.launch.py \
+  lidar_source:=livox \
+  target_class:=person \
+  use_rviz:=true
+```
+
+Following does not start automatically. Use the services below:
+
+```bash
+ros2 service call /send_rgbd_goal std_srvs/srv/Trigger "{}"
+ros2 service call /start_rgbd_follow std_srvs/srv/Trigger "{}"
+ros2 service call /stop_rgbd_follow std_srvs/srv/Trigger "{}"
+ros2 service call /unlock_rgbd_target std_srvs/srv/Trigger "{}"
+```
+
+See [my_robot_yolo_follow/README.md](my_robot_yolo_follow/README.md) for package
+details.
+
+## SAM3 Table Viewpoint
+
+The combined launch starts the shared navigation stack, Orbbec camera, SAM3
+detector, viewpoint planner, and table RViz configuration:
+
+```bash
+ros2 launch my_robot_table_viewpoint sam3_table_navigation.launch.py \
+  lidar_source:=livox \
+  sam3_model:=/home/jensen/ros2_ws/sam3.pt \
+  sam3_prompt:="office desk" \
+  sam3_device:=cuda
+```
+
+SAM3 detection runs on demand using the latest RGB-D frame:
+
+```bash
+ros2 service call /detect_sam3_table std_srvs/srv/Trigger "{}"
+```
+
+The detector publishes `/target_bbox_3d`, `/sam3_table_mask/debug`, and
+`/sam3_table_bbox_marker`. See
+[my_robot_table_viewpoint/README.md](my_robot_table_viewpoint/README.md) for
+standalone launches, input modes, calibration, and manual goal services.
+
+## Navigation Behavior
+
+The physical base is approximately `0.70 x 0.60 m`; Nav2 uses an expanded
+`0.80 x 0.70 m` rectangular footprint. The controller retains Omni motion but
+prefers vehicle-forward path following outside the near-goal region. Inside
+`1.2 m`, forward/path-angle preferences stop dominating so lateral and angular
+corrections can converge on the goal.
+
+Current goal and progress checks are:
+
+```yaml
+progress_checker:
+  required_movement_radius: 0.05
+  movement_time_allowance: 30.0
+
+goal_checker:
+  stateful: true
+  xy_goal_tolerance: 0.10
+  yaw_goal_tolerance: 0.08
+```
+
+The stateful goal checker remembers when position tolerance has been reached,
+allowing final heading correction without repeatedly reacquiring XY. The
+progress threshold is small enough not to interrupt normal near-goal motion
+prematurely. Velocity deadbands `[0.025, 0.025, 0.05]` suppress tiny commands
+that otherwise make the steering modules hunt near the endpoint.
+
+## Pose and Timing
+
+Raw SDK topics `/vmr_base_bridge/pose` and `/vmr_base_bridge/odom` may appear
+delayed because the vendor timestamp is not synchronized with ROS time. The
+navigation chain uses `sdk_pose_to_map_tf.py` with
+`stamp_with_current_time: true`, publishing `/estimated_pose`,
+`/estimated_odom`, and `map -> base_footprint`. Nav2 and the velocity smoother
+consume `/estimated_odom`.
+
+## Diagnostics
+
+Basic checks:
+
+```bash
 ros2 topic hz /livox/lidar
 ros2 topic hz /scan
+ros2 topic hz /estimated_odom
+ros2 run tf2_ros tf2_echo map base_footprint
 ros2 run tf2_ros tf2_echo base_footprint livox_frame
 ```
 
-The real launch expects the vehicle network and a saved map. Its default map is
-provided by `my_robot_maps`; override it with:
+For a complete real-navigation capture, use the installed diagnostic script:
 
 ```bash
-ros2 launch my_robot_bringup real_navigation_mppi.launch.py \
-  map:=/absolute/path/to/map.yaml
+ros2 run my_robot_navigation record_nav_diagnostics.sh
 ```
 
-Legacy launch files and pre-split helper nodes are kept under
-[`legacy/my_robot_py_sim`](legacy/my_robot_py_sim) for reference.
-
-## Packages
-
-- **my_robot_bringup**: main real and simulation launch entry points.
-- **my_robot_description**: robot URDF, RViz2 configuration, and simulation world.
-- **my_robot_maps**: versioned map assets used by Nav2 map server.
-- **my_robot_navigation**: Nav2, route, and safety configuration.
-- **my_robot_localization**: pose, odometry, and TF helper nodes.
-- **my_robot_perception**: point cloud, occupancy grid, and planning-map helper nodes.
-- **my_robot_tools**: route, marker, and operator helper tools.
-- **vmr_base_bridge**: wraps the vendor VMR SDK, publishes chassis state and
-  LiDAR topics, accepts `/cmd_vel`, and exposes task-style motion services.
-- **livox_ros_driver2**: vendored ROS 2 driver for Livox MID360. The real
-  navigation launch can start it and convert `/livox/lidar` to `/scan`.
-- **OrbbecSDK_ROS2**: vendored ROS 2 driver for the Orbbec Gemini 435Le depth
-  camera. The real navigation launch can start it, publish the camera TF, and
-  show color images plus RGB depth points in RViz2.
-- **pose_estimator**: optional experimental package for interpolating an
-  external pose stream. It is not part of the primary real-navigation launch.
+It records velocity commands, raw and estimated pose/odometry, scan and
+costmap data, TF, CPU usage, and a configuration snapshot.
 
 ## Safety
 
 Test real-robot changes at low speed with an operator and emergency stop
-available. Confirm the loaded map, footprint, TF, and obstacle data before
-sending an RViz2 navigation goal.
+available. Before sending a goal, verify the map, footprint, TF tree, `/scan`,
+and both costmaps. Change one control parameter group at a time and preserve a
+diagnostic log for comparison.

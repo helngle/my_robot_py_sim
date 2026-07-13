@@ -184,7 +184,7 @@ goal_checker:
 The stateful goal checker remembers when position tolerance has been reached,
 allowing final heading correction without repeatedly reacquiring XY. The
 progress threshold is small enough not to interrupt normal near-goal motion
-prematurely. Velocity deadbands `[0.025, 0.025, 0.05]` suppress tiny commands
+prematurely. Velocity deadbands `[0.015, 0.015, 0.05]` suppress tiny commands
 that otherwise make the steering modules hunt near the endpoint.
 
 ## Pose and Timing

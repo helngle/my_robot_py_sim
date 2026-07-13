@@ -66,6 +66,7 @@ message(STATUS "Using VMR SDK library: ${VMR_SDK_LIBRARY}")
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/VmrLocation.msg"
   "msg/VmrMoveStatus.msg"
+  "msg/VmrTimingDiagnostic.msg"
   "srv/StepMove.srv"
   "srv/VectorMove.srv"
   "srv/NavTarget.srv"

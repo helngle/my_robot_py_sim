@@ -19,6 +19,7 @@
 
 #include "vmr_base_bridge/msg/vmr_location.hpp"
 #include "vmr_base_bridge/msg/vmr_move_status.hpp"
+#include "vmr_base_bridge/msg/vmr_timing_diagnostic.hpp"
 #include "vmr_base_bridge/srv/cancel_task.hpp"
 #include "vmr_base_bridge/srv/control_relay.hpp"
 #include "vmr_base_bridge/srv/nav_target.hpp"
@@ -36,6 +37,14 @@ struct SiteTarget
   double x{0.0};
   double y{0.0};
   double theta{0.0};
+};
+
+struct CallbackTimingState
+{
+  bool initialized{false};
+  uint64_t last_sdk_timestamp_ns{0};
+  std::chrono::steady_clock::time_point last_arrival_time;
+  uint64_t sequence{0};
 };
 
 class VmrBaseBridge : public rclcpp::Node
@@ -80,6 +89,11 @@ private:
   void handleCmdVel(const geometry_msgs::msg::Twist::SharedPtr msg);
   void publishCmdVelToSdk();
   void logCmdVelDiagnostics(const rclcpp::Time & current_time);
+  void publishCallbackTiming(
+    const std::string & event_name,
+    uint64_t sdk_timestamp_ns,
+    CallbackTimingState & state);
+  void publishSdkCallTiming(const std::string & event_name, double call_duration_sec);
 
   void declareParameters();
   void initializeSdk();
@@ -125,6 +139,7 @@ private:
   std::string imu_topic_;
   std::string imu_pose_topic_;
   std::string move_status_topic_;
+  std::string timing_diagnostics_topic_;
   std::string cmd_vel_topic_;
   std::string base_frame_;
   std::string odom_frame_;
@@ -148,6 +163,8 @@ private:
   rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr imu_publisher_;
   rclcpp::Publisher<geometry_msgs::msg::PoseStamped>::SharedPtr imu_pose_publisher_;
   rclcpp::Publisher<vmr_base_bridge::msg::VmrMoveStatus>::SharedPtr move_status_publisher_;
+  rclcpp::Publisher<vmr_base_bridge::msg::VmrTimingDiagnostic>::SharedPtr
+    timing_diagnostics_publisher_;
   rclcpp::Service<vmr_base_bridge::srv::StepMove>::SharedPtr step_move_service_;
   rclcpp::Service<vmr_base_bridge::srv::VectorMove>::SharedPtr vector_move_service_;
   rclcpp::Service<vmr_base_bridge::srv::NavTarget>::SharedPtr nav_target_service_;
@@ -157,6 +174,10 @@ private:
   rclcpp::Subscription<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_subscription_;
   rclcpp::TimerBase::SharedPtr cmd_vel_timer_;
   std::mutex cmd_vel_mutex_;
+  std::mutex timing_diagnostics_mutex_;
+  CallbackTimingState location_timing_state_;
+  CallbackTimingState odom_timing_state_;
+  uint64_t sdk_call_sequence_{0};
   geometry_msgs::msg::Twist last_cmd_vel_;
   geometry_msgs::msg::Twist last_sent_cmd_vel_;
   rclcpp::Time last_cmd_vel_time_;

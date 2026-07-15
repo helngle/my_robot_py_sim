@@ -1,0 +1,10 @@
+std_msgs/Header header
+
+string event_name
+uint64 sequence
+uint64 sdk_timestamp_ns
+float64 sdk_interval_sec
+float64 arrival_interval_sec
+float64 sdk_call_duration_sec
+bool duplicate_timestamp
+bool timestamp_regressed

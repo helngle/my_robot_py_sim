@@ -93,6 +93,9 @@ VmrBaseBridge::VmrBaseBridge(const rclcpp::NodeOptions & options)
   imu_pose_publisher_ = create_publisher<geometry_msgs::msg::PoseStamped>(imu_pose_topic_, qos);
   move_status_publisher_ = create_publisher<vmr_base_bridge::msg::VmrMoveStatus>(
     move_status_topic_, qos);
+  timing_diagnostics_publisher_ =
+    create_publisher<vmr_base_bridge::msg::VmrTimingDiagnostic>(
+    timing_diagnostics_topic_, rclcpp::QoS(rclcpp::KeepLast(100)));
   step_move_service_ = create_service<vmr_base_bridge::srv::StepMove>(
     step_move_service_name_,
     std::bind(&VmrBaseBridge::handleStepMove, this, std::placeholders::_1, std::placeholders::_2));
@@ -187,6 +190,8 @@ void VmrBaseBridge::declareParameters()
   imu_pose_topic_ = declare_parameter<std::string>("topics.imu_pose", "/vmr_base_bridge/imu_pose");
   move_status_topic_ = declare_parameter<std::string>(
     "topics.move_status", "/vmr_base_bridge/move_status");
+  timing_diagnostics_topic_ = declare_parameter<std::string>(
+    "topics.timing_diagnostics", "/vmr_base_bridge/timing_diagnostics");
   cmd_vel_topic_ = declare_parameter<std::string>("topics.cmd_vel", "/cmd_vel");
   base_frame_ = declare_parameter<std::string>("frames.base_frame", "base_link");
   odom_frame_ = declare_parameter<std::string>("frames.odom_frame", "odom");
@@ -356,6 +361,8 @@ void VmrBaseBridge::handleLaserScan(const VmrLaserScan & scan)
 
 void VmrBaseBridge::handleLocation(const VmrLocationInfo & location)
 {
+  publishCallbackTiming("location_callback", location.timestamp_ns, location_timing_state_);
+
   vmr_base_bridge::msg::VmrLocation msg;
   msg.header = makeHeader(map_frame_, location.timestamp_ns);
   msg.x = location.x;
@@ -382,6 +389,8 @@ void VmrBaseBridge::handleLocation(const VmrLocationInfo & location)
 
 void VmrBaseBridge::handleOdometry(const VmrOdomInfo & odom)
 {
+  publishCallbackTiming("odom_callback", odom.timestamp_ns, odom_timing_state_);
+
   nav_msgs::msg::Odometry msg;
   msg.header = makeHeader(odom_frame_, odom.timestamp_ns);
   msg.child_frame_id = base_frame_;
@@ -737,7 +746,12 @@ void VmrBaseBridge::publishCmdVelToSdk()
   }
 
   if (!sdk_ctrl_speed_enabled_) {
+    const auto factor_call_start = std::chrono::steady_clock::now();
     const int factor_result = VMR_setSpeedFactor(sdk_handle_, cmd_vel_speed_factor_);
+    publishSdkCallTiming(
+      "set_speed_factor",
+      std::chrono::duration<double>(
+        std::chrono::steady_clock::now() - factor_call_start).count());
     if (factor_result != 0) {
       RCLCPP_WARN(
         get_logger(),
@@ -745,7 +759,12 @@ void VmrBaseBridge::publishCmdVelToSdk()
         cmd_vel_speed_factor_,
         factor_result);
     }
+    const auto enable_call_start = std::chrono::steady_clock::now();
     const std::string task_id = VMR_enableSdkCtrlSpeed(sdk_handle_, true);
+    publishSdkCallTiming(
+      "enable_sdk_ctrl_speed",
+      std::chrono::duration<double>(
+        std::chrono::steady_clock::now() - enable_call_start).count());
     if (task_id.empty()) {
       RCLCPP_ERROR_THROTTLE(
         get_logger(),
@@ -758,7 +777,11 @@ void VmrBaseBridge::publishCmdVelToSdk()
     RCLCPP_INFO(get_logger(), "VMR SDK speed control enabled, task_id=%s", task_id.c_str());
   }
 
+  const auto call_start = std::chrono::steady_clock::now();
   VMR_setRobotTwist(sdk_handle_, twist);
+  const double call_duration_sec = std::chrono::duration<double>(
+    std::chrono::steady_clock::now() - call_start).count();
+  publishSdkCallTiming("set_robot_twist", call_duration_sec);
   {
     std::scoped_lock<std::mutex> cmd_lock(cmd_vel_mutex_);
     last_sent_cmd_vel_.linear.x = twist.linear.x;
@@ -769,6 +792,62 @@ void VmrBaseBridge::publishCmdVelToSdk()
     last_sent_cmd_vel_.angular.z = twist.angular.z;
     ++cmd_vel_sent_count_;
   }
+}
+
+void VmrBaseBridge::publishCallbackTiming(
+  const std::string & event_name,
+  uint64_t sdk_timestamp_ns,
+  CallbackTimingState & state)
+{
+  const auto arrival_time = std::chrono::steady_clock::now();
+  vmr_base_bridge::msg::VmrTimingDiagnostic diagnostic;
+  diagnostic.header.stamp = now();
+  diagnostic.header.frame_id = map_frame_;
+  diagnostic.event_name = event_name;
+  diagnostic.sdk_timestamp_ns = sdk_timestamp_ns;
+  diagnostic.sdk_interval_sec = -1.0;
+  diagnostic.arrival_interval_sec = -1.0;
+  diagnostic.sdk_call_duration_sec = -1.0;
+
+  {
+    std::scoped_lock<std::mutex> lock(timing_diagnostics_mutex_);
+    diagnostic.sequence = ++state.sequence;
+    if (state.initialized) {
+      diagnostic.arrival_interval_sec = std::chrono::duration<double>(
+        arrival_time - state.last_arrival_time).count();
+      diagnostic.duplicate_timestamp = sdk_timestamp_ns == state.last_sdk_timestamp_ns;
+      diagnostic.timestamp_regressed = sdk_timestamp_ns < state.last_sdk_timestamp_ns;
+      if (!diagnostic.timestamp_regressed) {
+        diagnostic.sdk_interval_sec = static_cast<double>(
+          sdk_timestamp_ns - state.last_sdk_timestamp_ns) / 1e9;
+      }
+    }
+    state.initialized = true;
+    state.last_sdk_timestamp_ns = sdk_timestamp_ns;
+    state.last_arrival_time = arrival_time;
+  }
+
+  timing_diagnostics_publisher_->publish(diagnostic);
+}
+
+void VmrBaseBridge::publishSdkCallTiming(
+  const std::string & event_name,
+  double call_duration_sec)
+{
+  vmr_base_bridge::msg::VmrTimingDiagnostic diagnostic;
+  diagnostic.header.stamp = now();
+  diagnostic.header.frame_id = base_frame_;
+  diagnostic.event_name = event_name;
+  diagnostic.sdk_interval_sec = -1.0;
+  diagnostic.arrival_interval_sec = -1.0;
+  diagnostic.sdk_call_duration_sec = call_duration_sec;
+
+  {
+    std::scoped_lock<std::mutex> lock(timing_diagnostics_mutex_);
+    diagnostic.sequence = ++sdk_call_sequence_;
+  }
+
+  timing_diagnostics_publisher_->publish(diagnostic);
 }
 
 void VmrBaseBridge::logCmdVelDiagnostics(const rclcpp::Time & current_time)

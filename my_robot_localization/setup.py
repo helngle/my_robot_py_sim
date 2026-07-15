@@ -25,6 +25,7 @@ setup(
     entry_points={
         'console_scripts': [
             'gazebo_pose_odom = my_robot_localization.gazebo_pose_odom:main',
+            'latest_sdk_sample_relay = my_robot_localization.latest_sdk_sample_relay:main',
             'odom_to_tf = my_robot_localization.odom_to_tf:main',
             'sdk_pose_to_map_odom_tf = my_robot_localization.sdk_pose_to_map_odom_tf:main',
             'sdk_pose_to_map_tf = my_robot_localization.sdk_pose_to_map_tf:main',
